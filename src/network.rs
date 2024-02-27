@@ -37,7 +37,7 @@ impl<State: Serialize + for<'a> Deserialize<'a>> Net<State> for NetImpl {
             println!("Accepting connections!");
             let (mut socket, _) = listener.accept().await.unwrap();
             tokio::spawn(async move {
-                handler.
+                todo!()
             });
         });
     }
