@@ -5,7 +5,7 @@ use crate::network::{Message, NetReceiver};
 pub struct Counter;
 
 impl NetReceiver<Counter> for Counter {
-    async fn handle(message: Message<Counter>) {
+    async fn handle(self, message: Message<Counter>) {
         todo!()
     }
 }
