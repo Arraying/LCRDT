@@ -1,4 +1,6 @@
 use std::future::Future;
+use std::marker::Send;
+use std::pin::Pin;
 use crate::node::Node;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -6,7 +8,6 @@ use strum::IntoEnumIterator;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
-use crate::counter::Counter;
 
 // Types of messages.
 #[derive(Serialize, Deserialize)]
@@ -16,9 +17,9 @@ pub enum Message<State> {
 }
 
 // We will make a trait as this will allow us to test things.
-pub trait Net<State: Serialize + for<'a> Deserialize<'a>> {
+pub trait Net<State: Serialize + for<'a> Deserialize<'a> + Send> {
     // Subscribe to incoming messages.
-    async fn receive(&self, node: Node, handler: fn(Message<Counter>) -> impl Future<Output=()> + Sized);
+    async fn receive(&self, node: Node, handler: fn(Message<State>) -> BoxedUnitFuture);
 
     // Send a message to another node.
     async fn send(&self, node: Node, msg: &Message<State>);
@@ -27,14 +28,10 @@ pub trait Net<State: Serialize + for<'a> Deserialize<'a>> {
     async fn broadcast(&self, msg: &Message<State>);
 }
 
-pub trait NetReceiver<State: Serialize + for<'a> Deserialize<'a>> {
-    async fn handle(self, message: Message<State>);
-}
-
 struct NetImpl;
 
-impl<State: Serialize + for<'a> Deserialize<'a>> Net<State> for NetImpl {
-    async fn receive(&self, node: Node, handler: fn(Message<Counter>) -> impl Future<Output=()> + Sized) {
+impl<State: Serialize + for<'a> Deserialize<'a> + Send + 'static> Net<State> for NetImpl {
+    async fn receive(&self, node: Node, handler: fn(Message<State>) -> BoxedUnitFuture) {
         let listener = TcpListener::bind(node.get_addr()).await.unwrap();
         tokio::spawn(async move {
             println!("Accepting connections!");
@@ -44,7 +41,7 @@ impl<State: Serialize + for<'a> Deserialize<'a>> Net<State> for NetImpl {
                 socket.read_to_end(&mut data).await.unwrap();
                 let msg: Message<State> = serde_json::from_slice(&data)
                     .expect("Could not deserialize message");
-                handler(&msg)
+                handler(msg).await;
             });
         });
     }
@@ -67,6 +64,9 @@ impl<State: Serialize + for<'a> Deserialize<'a>> Net<State> for NetImpl {
     }
 }
 
-pub fn real_network<State: Serialize + for<'a> Deserialize<'a>>() -> impl Net<State> {
+pub fn real_network<State: Serialize + for<'a> Deserialize<'a> + Send + 'static>() -> impl Net<State> {
     return NetImpl{}
 }
+
+// Helper type because otherwise signatures will get unbearable.
+type BoxedUnitFuture = Pin<Box<dyn Future<Output = ()> + Send>>;

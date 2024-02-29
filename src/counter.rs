@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
-use crate::network::{Message, NetReceiver};
+use crate::network::{Message};
 
 #[derive(Serialize, Deserialize)]
 pub struct Counter;
 
-impl NetReceiver<Counter> for Counter {
-    async fn handle(self, message: Message<Counter>) {
-        todo!()
+impl Counter {
+    pub async fn handle(&mut self, _msg: Message<Counter>) {
+        println!("Received message!");
     }
 }

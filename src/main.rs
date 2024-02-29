@@ -11,10 +11,10 @@ async fn main() {
     // First, we figure out who we are.
     let the_node = node::whoami();
     // Initialized CRDT state.
-    let counter = Counter{};
+    let mut counter = Counter{};
     // Now we can start up our networking.
     let the_net = network::real_network::<Counter>();
-    the_net.receive(the_node, handle).await;
+    the_net.receive(the_node, counter.handle).await;
     // Run the command prompt loop.
     loop {
         // Get command line input.
