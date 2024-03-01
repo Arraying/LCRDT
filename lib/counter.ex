@@ -41,6 +41,7 @@ defmodule LCRDT.Counter do
   Initializes the counter to be empty.
   """
   def init(name) do
+    :timer.send_interval(10000, :autosync)
     {:ok, {name, Map.new()}}
   end
 
@@ -48,20 +49,26 @@ defmodule LCRDT.Counter do
     {:noreply, {name, Map.update(counters, name, 1, &(&1 + 1))}}
   end
 
-  def handle_cast(:sync, {name, counters}) do
+  def handle_cast(:sync, {_name, counters} = state) do
     Enum.each(LCRDT.Network.all_nodes(), &(GenServer.cast(&1, {:sync, counters})))
-    {:noreply, {name, counters}}
+    {:noreply, state}
   end
 
   def handle_cast({:sync, other_counters}, {name, counters}) do
     {:noreply, {name, Map.merge(other_counters, counters, fn(_k, v1, v2) -> max(v1, v2) end)}}
   end
 
-  def handle_call(:sum, _from, {name, counters}) do
-    {:reply, Enum.sum(Map.values(counters)), {name, counters}}
+  def handle_call(:sum, _from, {_name, counters} = state) do
+    {:reply, Enum.sum(Map.values(counters)), state}
   end
 
-  def handle_call(:dump, _from, {name, counters}) do
-    {:reply, counters, {name, counters}}
+  def handle_call(:dump, _from, {_name, counters} = state) do
+    {:reply, counters, state}
+  end
+
+  def handle_info(:autosync, {name, _counter} = state) do
+    IO.puts("#{name}: Performing periodic sync.")
+    sync(name)
+    {:noreply, state}
   end
 end
