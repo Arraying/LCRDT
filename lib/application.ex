@@ -7,7 +7,12 @@ defmodule LCRDT.Application do
   use Application
 
   def start(_, _) do
-    children = Enum.map(LCRDT.Network.all_nodes(), &(Supervisor.child_spec({LCRDT.Counter, &1}, id: &1)))
+    crdt = case System.fetch_env("CRDT") do
+      {:ok, "counter"} -> LCRDT.Counter
+      {:ok, "orset"} -> LCRDT.OrSet
+      _ -> LCRDT.Counter
+    end
+    children = Enum.map(LCRDT.Network.all_nodes(), &(Supervisor.child_spec({crdt, &1}, id: &1)))
     Supervisor.start_link(children, strategy: :one_for_all)
   end
 end
