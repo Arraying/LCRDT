@@ -17,6 +17,13 @@ defmodule LCRDT.Counter do
   end
 
   @doc """
+  Decrements the counter for the current node.
+  """
+  def dec(pid) do
+    GenServer.cast(pid, :dec)
+  end
+
+  @doc """
   Estimates the sum of the counter.
   """
   def sum(pid) do
@@ -42,33 +49,39 @@ defmodule LCRDT.Counter do
   """
   def init(name) do
     :timer.send_interval(10000, :autosync)
-    {:ok, {name, Map.new()}}
+    {:ok, {name, Map.new(), Map.new()}}
   end
 
-  def handle_cast(:inc, {name, counters}) do
-    {:noreply, {name, Map.update(counters, name, 1, &(&1 + 1))}}
+  def handle_cast(:inc, {name, up, down}) do
+    {:noreply, {name, Map.update(up, name, 1, &(&1 + 1)), down}}
   end
 
-  def handle_cast(:sync, {_name, counters} = state) do
-    Enum.each(LCRDT.Network.all_nodes(), &(GenServer.cast(&1, {:sync, counters})))
+  def handle_cast(:dec, {name, up, down}) do
+    {:noreply, {name, up, Map.update(down, name, 1, &(&1 + 1))}}
+  end
+
+  def handle_cast(:sync, {_name, up, down} = state) do
+    Enum.each(LCRDT.Network.all_nodes(), &(GenServer.cast(&1, {:sync, up, down})))
     {:noreply, state}
   end
 
-  def handle_cast({:sync, other_counters}, {name, counters}) do
-    {:noreply, {name, Map.merge(other_counters, counters, fn(_k, v1, v2) -> max(v1, v2) end)}}
+  def handle_cast({:sync, other_up, other_down}, {name, up, down}) do
+    {:noreply, {name, merge_counters(other_up, up), merge_counters(other_down, down)}}
   end
 
-  def handle_call(:sum, _from, {_name, counters} = state) do
-    {:reply, Enum.sum(Map.values(counters)), state}
+  def handle_call(:sum, _from, {_name, up, down} = state) do
+    {:reply, Enum.sum(Map.values(up)) - Enum.sum(Map.values(down)), state}
   end
 
-  def handle_call(:dump, _from, {_name, counters} = state) do
-    {:reply, counters, state}
+  def handle_call(:dump, _from, {_name, up, down} = state) do
+    {:reply, {up, down}, state}
   end
 
-  def handle_info(:autosync, {name, _counter} = state) do
+  def handle_info(:autosync, {name, _up, _down} = state) do
     IO.puts("#{name}: Performing periodic sync.")
     sync(name)
     {:noreply, state}
   end
+
+  defp merge_counters(left, right), do: Map.merge(left, right, fn(_k, v1, v2) -> max(v1, v2) end)
 end
