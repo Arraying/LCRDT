@@ -12,4 +12,12 @@ defmodule TPC.Follower do
     {:ok, coordinator_pid}
   end
 
+  @impl true
+  def handle_cast({:prepare_request, coordinator_pid}, state) do
+    vote = :ok
+    GenServer.cast(coordinator_pid, {:vote_response, self(), vote})
+    IO.puts("Follower #{inspect(self())} sent a vote response to coordinator #{inspect(coordinator_pid)}")
+    {:noreply, state}
+  end
+
 end

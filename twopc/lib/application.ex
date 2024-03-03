@@ -14,6 +14,11 @@ defmodule TPC.Application do
       GenServer.cast(TPC.Network.coordinator(), {:new_follower, follower})
     end)
 
+    # Trigger the voting phase by sending prepare requests to followers
+    followers = TPC.Network.all_followers()
+    TPC.Coordinator.send_prepare_requests(coordinator_pid, followers)
+    IO.puts("Voting phase triggered. Prepare requests sent to followers.")
+
     {:ok, coordinator_pid}
   end
 
