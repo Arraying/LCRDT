@@ -2,12 +2,7 @@ defmodule LCRDT.OrSet do
   @moduledoc """
   This represents an OR-Set CRDT.
   """
-  use GenServer
-
-  def start_link(name) do
-    IO.puts("OrSet #{name} starting")
-    GenServer.start_link(__MODULE__, name, name: name);
-  end
+  use LCRDT.CRDT
 
   @doc """
   Whether the set contains an element.
@@ -30,39 +25,16 @@ defmodule LCRDT.OrSet do
     GenServer.cast(pid, {:remove, key})
   end
 
-  @doc """
-  Broadcasts its state to all nodes.
-  """
-  def sync(pid) do
-    GenServer.cast(pid, :sync)
+  def initial_state(name) do
+    {name, Map.new()}
   end
 
-  @doc """
-  Debug functionality to see the state of the node.
-  """
-  def dump(pid) do
-    GenServer.call(pid, :dump)
+  def merge_state({_name, other_map}, {name, map}) do
+    {name, merge_sets(other_map, map)}
   end
 
-  @doc """
-  Initializes the set to be empty.
-  """
-  @impl true
-  def init(name) do
-    :timer.send_interval(10000, :autosync)
-    {:ok, {name, Map.new()}}
-  end
-
-  @impl true
-  def handle_cast(:sync, {_name, map1} = state) do
-    Enum.each(LCRDT.Network.all_nodes(), &(GenServer.cast(&1, {:sync, map1})))
-    {:noreply, state}
-  end
-
-  @impl true
-  def handle_cast({:sync, map0}, {name, map1}) do
-    map2 = merge_sets(map0, map1)
-    {:noreply, {name, map2}}
+  def name_from_state(state) do
+    Kernel.elem(state, 0)
   end
 
   @impl true
@@ -86,18 +58,6 @@ defmodule LCRDT.OrSet do
     map2 = insert(map1, key)
     {add, remove} = Map.fetch!(map2, key)
     {:reply, MapSet.size(MapSet.difference(add, remove)) > 0, {name, map2}}
-  end
-
-  @impl true
-  def handle_call(:dump, _from, {_name, map} = state) do
-    {:reply, map, state}
-  end
-
-  @impl true
-  def handle_info(:autosync, {name, _map} = state) do
-    IO.puts("#{name}: Performing periodic sync.")
-    sync(name)
-    {:noreply, state}
   end
 
   defp insert(map, object), do: Map.put_new(map, object, {MapSet.new(), MapSet.new()})
