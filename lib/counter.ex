@@ -2,12 +2,7 @@ defmodule LCRDT.Counter do
   @moduledoc """
   This represents a simple increasing CRDT counter.
   """
-  use GenServer
-
-  def start_link(name) do
-    IO.puts("Counter #{name} starting")
-    GenServer.start_link(__MODULE__, name, name: name);
-  end
+  use LCRDT.CRDT
 
   @doc """
   Increments the counter for the current node.
@@ -30,27 +25,17 @@ defmodule LCRDT.Counter do
     GenServer.call(pid, :sum)
   end
 
-  @doc """
-  Broadcasts its state to all nodes.
-  """
-  def sync(pid) do
-    GenServer.cast(pid, :sync)
+  def initial_state(name) do
+    {name, Map.new(), Map.new()}
   end
 
-  @doc """
-  Debug functionality to see the state of the node.
-  """
-  def dump(pid) do
-    GenServer.call(pid, :dump)
+  def merge_state({_name, other_up, other_down}, {name, up, down}) do
+    merge_state_counters = fn left, right -> Map.merge(left, right, fn(_k, v1, v2) -> max(v1, v2) end) end
+    {name, merge_state_counters.(other_up, up), merge_state_counters.(other_down, down)}
   end
 
-  @doc """
-  Initializes the counter to be empty.
-  """
-  @impl true
-  def init(name) do
-    :timer.send_interval(10000, :autosync)
-    {:ok, {name, Map.new(), Map.new()}}
+  def name_from_state(state) do
+    Kernel.elem(state, 0)
   end
 
   @impl true
@@ -64,32 +49,7 @@ defmodule LCRDT.Counter do
   end
 
   @impl true
-  def handle_cast(:sync, {_name, up, down} = state) do
-    Enum.each(LCRDT.Network.all_nodes(), &(GenServer.cast(&1, {:sync, up, down})))
-    {:noreply, state}
-  end
-
-  @impl true
-  def handle_cast({:sync, other_up, other_down}, {name, up, down}) do
-    {:noreply, {name, merge_counters(other_up, up), merge_counters(other_down, down)}}
-  end
-
-  @impl true
   def handle_call(:sum, _from, {_name, up, down} = state) do
     {:reply, Enum.sum(Map.values(up)) - Enum.sum(Map.values(down)), state}
   end
-
-  @impl true
-  def handle_call(:dump, _from, {_name, up, down} = state) do
-    {:reply, {up, down}, state}
-  end
-
-  @impl true
-  def handle_info(:autosync, {name, _up, _down} = state) do
-    IO.puts("#{name}: Performing periodic sync.")
-    sync(name)
-    {:noreply, state}
-  end
-
-  defp merge_counters(left, right), do: Map.merge(left, right, fn(_k, v1, v2) -> max(v1, v2) end)
 end
