@@ -31,7 +31,7 @@ defmodule LCRDT.CRDT do
       # This will initialize the state and start auto-syncing.
       @impl true
       def init(name) do
-        :timer.send_interval(10_0000, :autosync)
+        :timer.send_interval(10_000, :autosync)
         {:ok, initial_state(name)}
       end
 
