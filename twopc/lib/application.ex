@@ -7,16 +7,18 @@ defmodule TPC.Application do
     IO.puts("Just started coordinator with PID: #{inspect(coordinator_pid)}")
 
     # Start followers
-    TPC.Network.all_followers()
-    |> Enum.each(fn follower ->
+    follower_pids = TPC.Network.all_followers()
+    |> Enum.map(fn follower ->
       {:ok, follower_pid} = GenServer.start_link(TPC.Follower, coordinator_pid, name: follower)
       IO.puts("Just started follower with PID: #{inspect(follower_pid)}")
       GenServer.cast(TPC.Network.coordinator(), {:new_follower, follower})
+      follower_pid
     end)
 
-    # Trigger the voting phase by sending prepare requests to followers
-    followers = TPC.Network.all_followers()
-    TPC.Coordinator.send_prepare_requests(coordinator_pid, followers)
+    # TODO: Remove on merging
+    # Trigger 2PC
+    requester_pid = List.last(follower_pids)
+    GenServer.cast(coordinator_pid, {:prepare, requester_pid, 1})
     IO.puts("Voting phase triggered. Prepare requests sent to followers.")
 
     {:ok, coordinator_pid}
