@@ -9,26 +9,44 @@ defmodule LCRDT.OrSet do
     GenServer.start_link(__MODULE__, name, name: name);
   end
 
+  @doc """
+  Whether the set contains an element.
+  """
   def contains(pid, key) do
     GenServer.call(pid, {:contains, key})
   end
 
+  @doc """
+  Adds an element to the set.
+  """
   def add(pid, key) do
     GenServer.cast(pid, {:add, key})
   end
 
+  @doc """
+  Removes an element from the set.
+  """
   def remove(pid, key) do
     GenServer.cast(pid, {:remove, key})
   end
 
+  @doc """
+  Broadcasts its state to all nodes.
+  """
   def sync(pid) do
     GenServer.cast(pid, :sync)
   end
 
+  @doc """
+  Debug functionality to see the state of the node.
+  """
   def dump(pid) do
     GenServer.call(pid, :dump)
   end
 
+  @doc """
+  Initializes the set to be empty.
+  """
   @impl true
   def init(name) do
     :timer.send_interval(10000, :autosync)
