@@ -2,6 +2,8 @@ defmodule LCRDT.Counter do
   @moduledoc """
   This represents a simple increasing CRDT counter.
   """
+  @total_stock 100
+
   use LCRDT.CRDT
 
   @doc """
@@ -26,10 +28,10 @@ defmodule LCRDT.Counter do
   end
 
   def initial_state(name) do
-    {name, Map.new(), Map.new()}
+    {name, Map.new(), Map.new(), Map.new()}
   end
 
-  def merge_state({_name, other_up, other_down}, {name, up, down}) do
+  def merge_state({_name, _leases, other_up, other_down}, {name, __leases, up, down}) do
     merge_state_counters = fn left, right -> Map.merge(left, right, fn(_k, v1, v2) -> max(v1, v2) end) end
     {name, merge_state_counters.(other_up, up), merge_state_counters.(other_down, down)}
   end
@@ -38,18 +40,34 @@ defmodule LCRDT.Counter do
     Kernel.elem(state, 0)
   end
 
+  def prepare({:allocate, amount, _process}, {_name, leases, _up, _down} = state) do
+    if Enum.sum(Map.values(leases)) + amount > @total_stock do
+      {:abort, state}
+    else
+      {:ok, state}
+    end
+  end
+
+  def commit(body, state1) do
+    state1
+  end
+
+  def abort(body, state1) do
+    state1
+  end
+
   @impl true
-  def handle_cast(:inc, {name, up, down}) do
+  def handle_cast(:inc, {name, _leases, up, down}) do
     {:noreply, {name, Map.update(up, name, 1, &(&1 + 1)), down}}
   end
 
   @impl true
-  def handle_cast(:dec, {name, up, down}) do
+  def handle_cast(:dec, {name, _leases, up, down}) do
     {:noreply, {name, up, Map.update(down, name, 1, &(&1 + 1))}}
   end
 
   @impl true
-  def handle_call(:sum, _from, {_name, up, down} = state) do
+  def handle_call(:sum, _from, {_name, _leases, up, down} = state) do
     {:reply, Enum.sum(Map.values(up)) - Enum.sum(Map.values(down)), state}
   end
 end

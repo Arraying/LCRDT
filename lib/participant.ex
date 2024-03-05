@@ -1,9 +1,9 @@
 defmodule LCRDT.Participant do
   use GenServer
 
-  def start_link(name) do
+  def start_link({name, application_pid}) do
     IO.puts("Participant #{name} starting")
-    GenServer.start_link(__MODULE__, name, name: name);
+    GenServer.start_link(__MODULE__, {name, application_pid}, name: name);
   end
 
   def allocate(allocater_pid, crdt_pid, lease_amount) do
@@ -17,7 +17,7 @@ defmodule LCRDT.Participant do
   end
 
   @impl true
-  def init(name) do
+  def init({name, application_pid}) do
     # Leader state = {name, followers, votes, acks}
     # Name - might be redundant
     # Followers - map of {follower name, follower pid}
@@ -25,17 +25,20 @@ defmodule LCRDT.Participant do
     # (Skipped for now) Acks - used for logging whether commit on follower was successful, map of {follower pid, ack}
 
     # TODO: consider adding leader to followers
-    {:ok, {name, Map.new(), Map.new()}}
+    if name != LCRDT.Network.coordinator() do
+      GenServer.cast(LCRDT.Network.coordinator(), {:new_follower, name, name})
+    end
+    {:ok, {name, application_pid, Map.new(), Map.new()}}
   end
 
   @impl true
-  def handle_cast({:new_follower, new_follower_name,  new_follower_pid}, {name, followers, votes} = _state) do
+  def handle_cast({:new_follower, new_follower_name,  new_follower_pid}, {name, application_pid, followers, votes} = _state) do
     IO.puts("Coordinator #{inspect(LCRDT.Network.coordinator())} added follower with PID #{inspect(new_follower_pid)}")
-    {:noreply, {name, Map.put(followers, new_follower_name, new_follower_pid), votes}}
+    {:noreply, {name, application_pid, Map.put(followers, new_follower_name, new_follower_pid), votes}}
   end
 
   @impl true
-  def handle_cast({:start, crdt_pid, body}, {name, followers, _votes} = state) do
+  def handle_cast({:start, crdt_pid, body}, {name, application_pid, followers, _votes} = state) do
     # Check if node leader
     if name == LCRDT.Network.coordinator() do
       # Include leader
@@ -70,7 +73,7 @@ defmodule LCRDT.Participant do
   end
 
   @impl true
-  def handle_cast({:vote_response, sender_pid, vote, body}, {name, followers, votes} = _state) do
+  def handle_cast({:vote_response, sender_pid, vote, body}, {name, application_pid, followers, votes} = _state) do
     # Handle vote response message
     if vote == LCRDT.Network.VoteMessages.vote_commit() do
       IO.puts("Vote response was :ok, putting vote into votes map")
@@ -84,10 +87,10 @@ defmodule LCRDT.Participant do
           GenServer.cast(pid, {:commit, sender_pid, body})
         end)
       end
-      {:noreply, {name, followers, new_votes}}
+      {:noreply, {name, application_pid, followers, new_votes}}
     else
       IO.puts("Vote response was not :ok, let's abort")
-      {:noreply, {name, followers, votes}}
+      {:noreply, {name, application_pid, followers, votes}}
     end
   end
 

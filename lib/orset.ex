@@ -37,6 +37,18 @@ defmodule LCRDT.OrSet do
     Kernel.elem(state, 0)
   end
 
+  def prepare(body, state1) do
+    {:ok, state1}
+  end
+
+  def commit(body, state1) do
+    state1
+  end
+
+  def abort(body, state1) do
+    state1
+  end
+
   @impl true
   def handle_cast({:add, key}, {name, map1}) do
     map2 = insert(map1, key)

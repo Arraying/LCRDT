@@ -7,6 +7,9 @@ defmodule LCRDT.CRDT do
   @callback initial_state(term) :: term
   @callback merge_state(other_state :: term, state :: term) :: term
   @callback name_from_state(term) :: term
+  @callback prepare(term, term) :: {term, term}
+  @callback commit(term, term) :: term
+  @callback abort(term, term) :: term
 
   defmacro __using__(_opts) do
     quote do
@@ -16,6 +19,10 @@ defmodule LCRDT.CRDT do
       def start_link(name) do
         IO.puts("#{__MODULE__}/#{name}: Starting")
         GenServer.start_link(__MODULE__, name, name: name);
+      end
+
+      def request_leases(pid, amount) do
+        GenServer.cast(pid, {:request_leases, amount})
       end
 
       # Manually start a sync.
@@ -33,6 +40,13 @@ defmodule LCRDT.CRDT do
       def init(name) do
         :timer.send_interval(10_000_000, :autosync)
         {:ok, initial_state(name)}
+      end
+
+      @impl true
+      def handle_cast({:request_leases, amount}, state) do
+        name = name_from_state(state)
+        LCRDT.Participant.allocate(name, name, amount)
+        {:noreply, state}
       end
 
       # Broadcasts its entire state.
@@ -54,9 +68,11 @@ defmodule LCRDT.CRDT do
       end
 
       @impl true
-      def handle_call(:prepare, _from, state) do
+      def handle_call({:prepare, body}, _from, state1) do
         # TODO: Implement check
-        {:reply, :ok, state}
+        {res, state2} = prepare(body, state1)
+        IO.puts("#{name_from_state(state1)} got asked to prepare")
+        {:reply, res, state2}
       end
       # <-- /CRDT communication -->
 

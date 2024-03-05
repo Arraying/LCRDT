@@ -12,8 +12,10 @@ defmodule LCRDT.Node do
     tpc_name = :"#{id}_tpc"
     children = [
       Supervisor.child_spec({crdt_type, crdt_name}, id: crdt_name),
-      Supervisor.child_spec({LCRDT.Participant, tpc_name}, id: tpc_name)
+      Supervisor.child_spec({LCRDT.Participant, {get_name(id, tpc_name), crdt_name}}, id: tpc_name)
     ]
     Supervisor.start_link(children, strategy: :one_for_all)
   end
+
+  defp get_name(id, tpc_name), do: if id == :foo, do: LCRDT.Network.coordinator(), else: tpc_name
 end
