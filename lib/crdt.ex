@@ -47,6 +47,19 @@ defmodule LCRDT.CRDT do
         {:noreply, merge_state(other_state, state)}
       end
 
+      # <-- CRDT communication -->
+      @impl true
+      def handle_cast({:commit, body}, state) do
+        {:noreply, state}
+      end
+
+      @impl true
+      def handle_call(:prepare, _from, state) do
+        # TODO: Implement check
+        {:reply, :ok, state}
+      end
+      # <-- /CRDT communication -->
+
       # Just returns the state.
       @impl true
       def handle_call(:dump, _from, state) do
