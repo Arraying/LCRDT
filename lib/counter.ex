@@ -49,10 +49,12 @@ defmodule LCRDT.Counter do
   end
 
   def commit(body, state1) do
+    IO.inspect(body)
     state1
   end
 
   def abort(body, state1) do
+    IO.inspect(body)
     state1
   end
 

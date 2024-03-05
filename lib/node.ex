@@ -17,5 +17,5 @@ defmodule LCRDT.Node do
     Supervisor.start_link(children, strategy: :one_for_all)
   end
 
-  defp get_name(id, tpc_name), do: if id == :foo, do: LCRDT.Network.coordinator(), else: tpc_name
+  defp get_name(id, tpc_name), do: (if id == :foo, do: LCRDT.Network.coordinator(), else: tpc_name)
 end

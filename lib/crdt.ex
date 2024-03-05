@@ -45,7 +45,7 @@ defmodule LCRDT.CRDT do
       @impl true
       def handle_cast({:request_leases, amount}, state) do
         name = name_from_state(state)
-        LCRDT.Participant.allocate(name, name, amount)
+        LCRDT.Participant.allocate(name, amount)
         {:noreply, state}
       end
 
@@ -64,7 +64,12 @@ defmodule LCRDT.CRDT do
       # <-- CRDT communication -->
       @impl true
       def handle_cast({:commit, body}, state) do
-        {:noreply, state}
+        {:noreply, commit(body, state)}
+      end
+
+      @impl true
+      def handle_cast({:abort, body}, state) do
+        {:noreply, abort(body, state)}
       end
 
       @impl true

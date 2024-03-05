@@ -19,6 +19,18 @@ defmodule LCRDT.Logging do
     end
   end
 
+  def log_change(logs, tid, body) do
+    [{:change, tid, body} | logs]
+  end
+
+  def log_commit(logs, tid) do
+    [{:finalize, :commit, tid} | logs]
+  end
+
+  def log_abort(logs, tid) do
+    [{:finalize, :abort, tid} | logs]
+  end
+
   def read(name) do
     case File.read(file_name(name)) do
       {:ok, bytes} -> :erlang.binary_to_term(bytes)
@@ -29,6 +41,10 @@ defmodule LCRDT.Logging do
   def write(name, logs) do
     bytes = :erlang.term_to_binary(logs)
     File.write!(file_name(name), bytes)
+  end
+
+  def clean_slate() do
+    File.rm_rf!(@logdir)
   end
 
   defp file_name(name) do
