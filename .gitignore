@@ -28,3 +28,6 @@ lcrdt-*.tar
 
 # Elixir language server things.
 .elixir_ls/
+
+# Custom logs.
+logs/
