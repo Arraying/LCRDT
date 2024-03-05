@@ -54,7 +54,8 @@ defmodule LCRDT.Participant do
     # If we have an uncommited change in the log, we need to handle this.
     logs = Logging.read(name)
     # Go through all the changes in the log and apply them.
-    apply_logs(name, logs, application_pid)
+    # This is such that we can get the CRDT into the correct state.
+    apply_logs(logs, application_pid)
     # Check for retransmissions.
     case Logging.peek_change(logs) do
       # We have to re-transmit our vote response because we're not sure what happened.
@@ -218,10 +219,9 @@ defmodule LCRDT.Participant do
     end
   end
 
-  defp apply_logs(_name, _logs, _application_pid) do
+  defp apply_logs(logs, application_pid) do
     # We play through in the correct oder.
-    # This can be optimized by only considering commits, but is ignored for brevity.
-    # TODO: Implement this.
+    Logging.run(logs, application_pid)
   end
 
   defp resend_last_outcome(state, syncing_pid, last_tid) do

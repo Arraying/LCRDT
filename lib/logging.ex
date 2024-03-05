@@ -37,6 +37,10 @@ defmodule LCRDT.Logging do
     end
   end
 
+  def run(logs, application_pid) do
+    simulate(Enum.reverse(logs), application_pid)
+  end
+
   def log_change(name, logs1, tid, body) do
     logs2 = [{:change, tid, body} | logs1]
     write(name, logs2)
@@ -69,6 +73,21 @@ defmodule LCRDT.Logging do
 
   def clean_slate() do
     File.rm_rf!(@logdir)
+  end
+
+  defp simulate(logs, application_pid) do
+    case logs do
+      # We have a change that was comitted.
+      [{:change, _, body} | [{:finalize, :commit, _} | next]] ->
+        IO.inspect(body)
+        simulate(next, application_pid)
+      # We have a change that was not committed or an abort.
+      [_ | next] ->
+        simulate(next, application_pid)
+      # We have reached the end of the simulation.
+      _ ->
+        :done
+    end
   end
 
   defp file_name(name) do
