@@ -40,7 +40,6 @@ defmodule LCRDT.Participant do
 
   @impl true
   def init({name, application_pid}) do
-    # TODO: consider adding leader to followers
     followers =
       if name != Network.coordinator() do
         # We indicate that we are a follower.
