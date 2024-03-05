@@ -12,8 +12,9 @@ defmodule LCRDT.Application do
       {:ok, "orset"} -> LCRDT.OrSet
       _ -> LCRDT.Counter
     end
-    children = Enum.map(LCRDT.Network.all_nodes(), &(make_node(&1, crdt)))
-    Supervisor.start_link(children, strategy: :one_for_all)
+    children1 = Enum.map(LCRDT.Network.all_nodes(), &(make_node(&1, crdt)))
+    children2 = [{LCRDT.Participant, LCRDT.Network.coordinator()} | children1]
+    Supervisor.start_link(children2, strategy: :one_for_all)
   end
 
   defp make_node(id, crdt) do

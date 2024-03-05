@@ -9,9 +9,10 @@ defmodule LCRDT.Node do
   def start_link(crdt_type, id) do
     IO.puts("#{__MODULE__}/#{id}: Starting")
     crdt_name = :"#{id}_crdt"
-    _tpc_name = :"#{id}_tpc"
+    tpc_name = :"#{id}_tpc"
     children = [
-      Supervisor.child_spec({crdt_type, crdt_name}, id: crdt_name)
+      Supervisor.child_spec({crdt_type, crdt_name}, id: crdt_name),
+      Supervisor.child_spec({LCRDT.Participant, tpc_name}, id: tpc_name)
     ]
     Supervisor.start_link(children, strategy: :one_for_all)
   end
