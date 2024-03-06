@@ -52,7 +52,7 @@ defmodule LCRDT.CRDT do
       # Broadcasts its entire state.
       @impl true
       def handle_cast(:sync, state) do
-        Enum.each(LCRDT.Network.all_nodes(), &(GenServer.cast(&1, {:sync, state})))
+        Enum.each(LCRDT.Network.all_nodes() |> Enum.map(&(LCRDT.Network.node_to_crdt(&1))), &(GenServer.cast(&1, {:sync, state})))
         {:noreply, state}
       end
 

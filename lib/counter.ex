@@ -31,9 +31,9 @@ defmodule LCRDT.Counter do
     {name, Map.new(), Map.new(), Map.new()}
   end
 
-  def merge_state({_name, _leases, other_up, other_down}, {name, __leases, up, down}) do
+  def merge_state({_name, leases, other_up, other_down}, {name, leases, up, down}) do
     merge_state_counters = fn left, right -> Map.merge(left, right, fn(_k, v1, v2) -> max(v1, v2) end) end
-    {name, merge_state_counters.(other_up, up), merge_state_counters.(other_down, down)}
+    {name, leases, merge_state_counters.(other_up, up), merge_state_counters.(other_down, down)}
   end
 
   def name_from_state(state) do
@@ -59,13 +59,13 @@ defmodule LCRDT.Counter do
   end
 
   @impl true
-  def handle_cast(:inc, {name, _leases, up, down}) do
-    {:noreply, {name, Map.update(up, name, 1, &(&1 + 1)), down}}
+  def handle_cast(:inc, {name, leases, up, down}) do
+    {:noreply, {name, leases, Map.update(up, name, 1, &(&1 + 1)), down}}
   end
 
   @impl true
-  def handle_cast(:dec, {name, _leases, up, down}) do
-    {:noreply, {name, up, Map.update(down, name, 1, &(&1 + 1))}}
+  def handle_cast(:dec, {name, leases, up, down}) do
+    {:noreply, {name, leases, up, Map.update(down, name, 1, &(&1 + 1))}}
   end
 
   @impl true

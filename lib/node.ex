@@ -8,8 +8,8 @@ defmodule LCRDT.Node do
 
   def start_link(crdt_type, id) do
     IO.puts("#{__MODULE__}/#{id}: Starting")
-    crdt_name = :"#{id}_crdt"
-    tpc_name = :"#{id}_tpc"
+    crdt_name = LCRDT.Network.node_to_crdt(id)
+    tpc_name = LCRDT.Network.node_to_tpc(id)
     children = [
       Supervisor.child_spec({crdt_type, crdt_name}, id: crdt_name),
       Supervisor.child_spec({LCRDT.Participant, {get_name(id, tpc_name), crdt_name}}, id: tpc_name)
