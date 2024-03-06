@@ -10,6 +10,7 @@ defmodule LCRDT.CRDT do
   @callback prepare(term, term) :: {term, term}
   @callback commit(term, term) :: term
   @callback abort(term, term) :: term
+  @callback replay(term, term) :: term
 
   defmacro __using__(_opts) do
     quote do
@@ -78,6 +79,12 @@ defmodule LCRDT.CRDT do
         {res, state2} = prepare(body, state1)
         IO.puts("#{name_from_state(state1)} got asked to prepare")
         {:reply, res, state2}
+      end
+
+      @impl true
+      def handle_call({:replay, body}, _from, state) do
+        IO.puts("#{__MODULE__}/#{name_from_state(state)}: Replaying #{inspect(body)}")
+        {:reply, :ok, replay(body, state)}
       end
       # <-- /CRDT communication -->
 

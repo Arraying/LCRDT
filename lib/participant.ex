@@ -1,6 +1,8 @@
 defmodule LCRDT.Participant do
   alias LCRDT.Logging
   alias LCRDT.Network
+  import LCRDT.Injections
+  import LCRDT.Injections.Crash
   use GenServer
 
   # All state (only some of it relevant to non-leader)
@@ -18,8 +20,11 @@ defmodule LCRDT.Participant do
       :followers,
       :tid,
       :body,
+      :body_previous,
       stage: :idle,
-      votes: Map.new()
+      votes: Map.new(),
+      crashpoints: 0,
+      lagpoints: 0,
     ]
   end
 
@@ -109,6 +114,10 @@ defmodule LCRDT.Participant do
 
   @impl true
   def handle_cast({:prepare_request, tid, body}, state1) do
+    # Crashpoint: pretend prepare was not received.
+    if activated(state1.crashpoints, before_prepare()) do
+      raise("hit before_prepare crashpoint")
+    end
     # First, we have to make a call to the application layer to determine what to do.
     # The application layer will tell us either OK or abort.
     {vote, state2} = case GenServer.call(state1.application_pid, {:prepare, body}, :infinity) do
@@ -120,9 +129,17 @@ defmodule LCRDT.Participant do
         # If this is not okay, then we just need to return the message.
         {:abort, state1}
     end
+    # Crashpoint: prepare response was not sent.
+    if activated(state1.crashpoints, during_prepare()) do
+      raise("hit during_prepare crashpoint")
+    end
     # Send the response to the actual coordinator.
     GenServer.cast(Network.coordinator(), {:vote_response, tid, state2.name, vote})
     out(state2, "Sent a vote response to coodinator: #{vote}")
+    # Crashpoint: prepare response was received.
+    if activated(state1.crashpoints, after_prepare()) do
+      raise("hit after_prepare crashpoint")
+    end
     {:noreply, state2}
   end
 
@@ -161,19 +178,8 @@ defmodule LCRDT.Participant do
   end
 
   @impl true
-  def handle_cast({:finalize, tid, :commit, body}, state) do
-    # Send a COMMIT indication.
-    GenServer.cast(state.application_pid, {:commit, body})
-    logs = Logging.log_commit(state.name, state.logs, tid)
-    {:noreply, %{state | logs: logs}}
-  end
-
-  @impl true
-  def handle_cast({:finalize, tid, :abort, body}, state) do
-    # Send an ABORT indication.
-    GenServer.cast(state.application_pid, {:abort, body})
-    logs = Logging.log_abort(state.name, state.logs, tid)
-    {:noreply, %{state | logs: logs}}
+  def handle_cast({:finalize, tid, outcome, body}, state) do
+    {:noreply, finalize(tid, outcome, body, state)}
   end
 
   def handle_cast({:recovery, recovered_pid}, state1) do
@@ -196,6 +202,14 @@ defmodule LCRDT.Participant do
     end
   end
 
+  def handle_cast({:inject_fault, crashpoints, lagpoints}, state1) do
+    out(state1, "New injections, crashing at #{crashpoints} and lagging at #{lagpoints}")
+    new_crashpoints = union(state1.crashpoints, crashpoints)
+    new_lagpoints = union(state1.lagpoints, lagpoints)
+    state2 = %{state1 | crashpoints: new_crashpoints, lagpoints: new_lagpoints}
+    {:noreply, state2}
+  end
+
   defp try_action(state2) do
     # We can only do something once we have all votes.
     if map_size(state2.votes) == length(state2.followers) do
@@ -203,19 +217,37 @@ defmodule LCRDT.Participant do
       out(state2, "Received #{num_aborts} aborts")
       # Naturally, we abort if at least one node says to abort.
       action = if num_aborts == 0, do: :commit, else: :abort
+      # We finalize ourselves FIRST so we can do proper crash recovery.
+      state3 = finalize(state2.tid, action, state2.body, state2)
+      out(state3, "Finalized own state")
       # Broadcast the outcome to all followers.
-      Enum.each(state2.followers, fn follower_pid ->
-        GenServer.cast(follower_pid, {:finalize, state2.tid, action, state2.body})
-        out(state2, "Sent a finalize request to follower #{follower_pid}")
+      Enum.each(state3.followers, fn follower_pid ->
+        unless follower_pid == state3.name do
+          GenServer.cast(follower_pid, {:finalize, state3.tid, action, state3.body})
+          out(state2, "Sent a finalize request to follower #{follower_pid}")
+        end
       end)
       # We are done with this now!
       # We can reset the state back to blank now.
-      out(state2, "Resetting the state")
-      %{state2 | tid: nil, body: nil, stage: :idle, votes: Map.new()}
+      out(state3, "Resetting the state")
+      %{state3 | tid: nil, body: nil, body_previous: state3.body, stage: :idle, votes: Map.new()}
     else
       # Noop.
       state2
     end
+  end
+
+  defp finalize(tid, outcome, body, state) do
+    out(state, "Received finalize")
+    logs = case outcome do
+      :commit ->
+        GenServer.cast(state.application_pid, {:commit, body})
+        Logging.log_commit(state.name, state.logs, tid)
+      :abort ->
+        GenServer.cast(state.application_pid, {:abort, body})
+        Logging.log_abort(state.name, state.logs, tid)
+    end
+    %{state | logs: logs}
   end
 
   defp apply_logs(logs, application_pid) do
@@ -224,11 +256,13 @@ defmodule LCRDT.Participant do
   end
 
   defp resend_last_outcome(state, syncing_pid, last_tid) do
+    IO.inspect(state.logs)
     case Logging.find_outcome(state.logs, last_tid) do
       :not_found ->
         out(state, "ERROR, could not find last outcome of a crashed process, this is a bug")
-      {:found, outcome, body} ->
-        GenServer.cast(syncing_pid, {:finalize, last_tid, outcome, body})
+      {:found, outcome} ->
+        out(state, "Sending last outcome to #{syncing_pid}")
+        GenServer.cast(syncing_pid, {:finalize, last_tid, outcome, state.body_previous})
     end
   end
 

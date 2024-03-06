@@ -27,10 +27,9 @@ defmodule LCRDT.Logging do
       [] ->
         :not_found
       # We found one that matches.
-      [{:finalize, outcome, ^tid} | {:change, _, body}] ->
-        # We know that after (so before in terms of time) there will be a change.
-        # This is the change that we are interested in, as this is the last committed change.
-        {:found, outcome, body}
+      [{:finalize, outcome, ^tid} | _next] ->
+        # We will find the body through the coordinator.
+        {:found, outcome}
       # We did not find a match, continue recursively.
       [_ | next] ->
         find_outcome(next, tid)
@@ -79,8 +78,13 @@ defmodule LCRDT.Logging do
     case logs do
       # We have a change that was comitted.
       [{:change, _, body} | [{:finalize, :commit, _} | next]] ->
-        IO.inspect(body)
+        GenServer.call(application_pid, {:replay, body}, :infinity)
         simulate(next, application_pid)
+      # Uncommitted change
+      [{:change, _, body}] ->
+        # Deliver to the layer above.
+        GenServer.call(application_pid, {:replay, body}, :infinity)
+        :done
       # We have a change that was not committed or an abort.
       [_ | next] ->
         simulate(next, application_pid)

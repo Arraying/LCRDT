@@ -49,6 +49,10 @@ defmodule LCRDT.OrSet do
     state1
   end
 
+  def replay(_body, state1) do
+    state1
+  end
+
   @impl true
   def handle_cast({:add, key}, {name, map1}) do
     map2 = insert(map1, key)

@@ -40,11 +40,11 @@ defmodule LCRDT.Counter do
     Kernel.elem(state, 0)
   end
 
-  def prepare({:allocate, amount, _process}, {_name, leases, _up, _down} = state) do
+  def prepare({:allocate, amount, process}, {_name, leases, _up, _down} = state) do
     if Enum.sum(Map.values(leases)) + amount > @total_stock do
       {:abort, state}
     else
-      {:ok, state}
+      {:ok, add_lease(state, process, amount)}
     end
   end
 
@@ -53,9 +53,18 @@ defmodule LCRDT.Counter do
     state1
   end
 
-  def abort(body, state1) do
-    IO.inspect(body)
-    state1
+  def abort({:allocate, amount, process}, {name, leases1, up, down}) do
+    leases2 =
+      if Map.has_key?(leases1, process) do
+        Map.update!(leases1, process, fn x -> x - amount end)
+      else
+        leases1
+      end
+    {name, leases2, up, down}
+  end
+
+  def replay({:allocate, amount, process}, state) do
+    add_lease(state, process, amount)
   end
 
   @impl true
@@ -71,5 +80,10 @@ defmodule LCRDT.Counter do
   @impl true
   def handle_call(:sum, _from, {_name, _leases, up, down} = state) do
     {:reply, Enum.sum(Map.values(up)) - Enum.sum(Map.values(down)), state}
+  end
+
+  defp add_lease({name, leases1, up, down}, process, amount) do
+    leases2 = Map.update(leases1, process, amount, fn x -> x + amount end)
+    {name, leases2, up, down}
   end
 end
