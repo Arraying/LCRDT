@@ -1,4 +1,4 @@
-defmodule LCRDT.CounterTest do
+defmodule LCRDT.TPCTest do
   use ExUnit.Case
   alias LCRDT.Counter
   alias LCRDT.Participant
@@ -55,6 +55,27 @@ defmodule LCRDT.CounterTest do
     # This also works for aborts, it will get set to 0 (but is harder to test).
     assert foo_leases(@bar) == 1
     assert foo_leases(@baz) == 1
+  end
+
+  test "commit, follower crashes after sending vote and another transaction started" do
+    Participant.allocate(@foo, 1)
+    :timer.sleep(@delay)
+    # There's no good way of doing this, so we manually prune the log.
+    [{:finalize, :commit, _} | rest] = LCRDT.Logging.read(@faulty)
+    LCRDT.Logging.write(@faulty, rest)
+    # We undo the lease manually, so it's reflected in-memory at the application layer as well.
+    # The in-memory log of the TPC node will still be incorrect.
+    # That's fine though, because it's getting killed next :D
+    GenServer.cast(@bar, {:abort, {:allocate, 1, @foo}})
+    :timer.sleep(@delay)
+    assert foo_leases(@bar) == 0
+    # If we now crash before preparing it's going to get us into the state we want.
+    inject(@faulty, before_prepare(), neutral())
+    # It's time to kill it with another transaction.
+    Participant.allocate(@foo, 2)
+    :timer.sleep(@delay)
+    # We should now be able to see both.
+    assert foo_leases(@bar) == 3
   end
 
   # We get this from baz to ensure the changes propagated to a non-coordinator non-faulty node.

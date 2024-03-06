@@ -256,7 +256,6 @@ defmodule LCRDT.Participant do
   end
 
   defp resend_last_outcome(state, syncing_pid, last_tid) do
-    IO.inspect(state.logs)
     case Logging.find_outcome(state.logs, last_tid) do
       :not_found ->
         out(state, "ERROR, could not find last outcome of a crashed process, this is a bug")

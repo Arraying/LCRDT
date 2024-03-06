@@ -75,7 +75,6 @@ defmodule LCRDT.CRDT do
 
       @impl true
       def handle_call({:prepare, body}, _from, state1) do
-        # TODO: Implement check
         {res, state2} = prepare(body, state1)
         IO.puts("#{name_from_state(state1)} got asked to prepare")
         {:reply, res, state2}
