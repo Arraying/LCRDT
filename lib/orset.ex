@@ -2,7 +2,7 @@ defmodule LCRDT.OrSet do
   @moduledoc """
   This represents an OR-Set CRDT.
   """
-  # use LCRDT.CRDT
+  use LCRDT.CRDT
 
   @doc """
   Whether the set contains an element.
@@ -25,55 +25,50 @@ defmodule LCRDT.OrSet do
     GenServer.cast(pid, {:remove, key})
   end
 
-  def initial_state(name) do
-    {name, Map.new()}
+  @doc """
+  The total number of stock.
+  This is the max. leases we can allocate across all nodes.
+  """
+  def total_stock(), do: 100
+
+  @doc """
+  The initial state. An empty map.
+  """
+  def initial_state() do
+    %{
+      data: Map.new(),
+    }
   end
 
-  def merge_state({_name, other_map}, {name, map}) do
-    {name, merge_sets(other_map, map)}
-  end
-
-  def name_from_state(state) do
-    Kernel.elem(state, 0)
-  end
-
-  def prepare(_body, state1) do
-    {:ok, state1}
-  end
-
-  def commit(_body, state1) do
-    state1
-  end
-
-  def abort(_body, state1) do
-    state1
-  end
-
-  def replay(_body, state1) do
-    state1
+  @doc """
+  Merges the two sets by taking unions.
+  """
+  def merge_state(other_state, state) do
+    data = merge_sets(other_state.data, state.data)
+    %{state | data: data}
   end
 
   @impl true
-  def handle_cast({:add, key}, {name, map1}) do
-    map2 = insert(map1, key)
+  def handle_cast({:add, key}, state) do
+    map2 = insert(state.data, key)
     {add, remove} = Map.fetch!(map2, key)
     map3 = Map.put(map2, key, {MapSet.put(add, :erlang.make_ref()), remove})
-    {:noreply, {name, map3}}
+    {:noreply, %{data: map3}}
   end
 
   @impl true
-  def handle_cast({:remove, key}, {name, map1}) do
-    map2 = insert(map1, key)
+  def handle_cast({:remove, key}, state) do
+    map2 = insert(state.data, key)
     {add, remove} = Map.fetch!(map2, key)
     map3 = Map.put(map2, key, {add, MapSet.union(add, remove)})
-    {:noreply, {name, map3}}
+    {:noreply, %{data: map3}}
   end
 
   @impl true
-  def handle_call({:contains, key}, _from, {name, map1}) do
-    map2 = insert(map1, key)
+  def handle_call({:contains, key}, _from, state) do
+    map2 = insert(state.data, key)
     {add, remove} = Map.fetch!(map2, key)
-    {:reply, MapSet.size(MapSet.difference(add, remove)) > 0, {name, map2}}
+    {:reply, MapSet.size(MapSet.difference(add, remove)) > 0, %{state | data: map2}}
   end
 
   defp insert(map, object), do: Map.put_new(map, object, {MapSet.new(), MapSet.new()})

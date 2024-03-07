@@ -1,6 +1,6 @@
 # LCRDT
 
-First, launch the shell. This will bind three CvRDTs under `:foo`, `:bar` and `:baz`.
+First, launch the shell. This will bind three CvRDTs under `:foo_crdt`, `:bar_crdt` and `:baz_crdt`.
 
 ## Increment-Decrement Counter
 ```
@@ -9,23 +9,23 @@ CRDT="counter" iex -S mix
 
 Now, you can use the counter functionalities:
 ```
-iex(1)> LCRDT.Counter.sum(:foo)
+iex(1)> LCRDT.Counter.sum(:foo_crdt)
 0
-iex(2)> LCRDT.Counter.inc(:foo)
+iex(2)> LCRDT.Counter.inc(:foo_crdt)
 :ok
-iex(3)> LCRDT.Counter.inc(:foo)
+iex(3)> LCRDT.Counter.inc(:foo_crdt)
 :ok
-iex(4)> LCRDT.Counter.dec(:foo)
+iex(4)> LCRDT.Counter.dec(:foo_crdt)
 :ok
-iex(5)> LCRDT.Counter.sum(:foo)
+iex(5)> LCRDT.Counter.sum(:foo_crdt)
 1
-iex(6)> LCRDT.Counter.inc(:bar)
+iex(6)> LCRDT.Counter.inc(:bar_crdt)
 :ok
-iex(7)> LCRDT.Counter.sum(:foo)
+iex(7)> LCRDT.Counter.sum(:foo_crdt)
 1
-iex(8)> LCRDT.Counter.sync(:bar)
+iex(8)> LCRDT.Counter.sync(:bar_crdt)
 :ok
-iex(9)> LCRDT.Counter.sum(:foo)
+iex(9)> LCRDT.Counter.sum(:foo_crdt)
 2
 ```
 
@@ -38,23 +38,23 @@ CRDT="orset" iex -S mix
 
 Now, you can use the or-set functionalities:
 ```
-iex(1)> LCRDT.OrSet.contains(:foo, :test_1)
+iex(1)> LCRDT.OrSet.contains(:foo_crdt, :test_1)
 false
-iex(2)> LCRDT.OrSet.add(:foo, :test_1)
+iex(2)> LCRDT.OrSet.add(:foo_crdt, :test_1)
 :ok
-iex(3)> LCRDT.OrSet.contains(:foo, :test_1)
+iex(3)> LCRDT.OrSet.contains(:foo_crdt, :test_1)
 true
-iex(4)> LCRDT.OrSet.remove(:foo, :test_1)  
+iex(4)> LCRDT.OrSet.remove(:foo_crdt, :test_1)  
 :ok
-iex(5)> LCRDT.OrSet.contains(:foo, :test_1)
+iex(5)> LCRDT.OrSet.contains(:foo_crdt, :test_1)
 false
-iex(6)> LCRDT.OrSet.add(:foo, :test_1)
+iex(6)> LCRDT.OrSet.add(:foo_crdt, :test_1)
 :ok
-iex(7)> LCRDT.OrSet.add(:bar, :test_2)
+iex(7)> LCRDT.OrSet.add(:bar_crdt, :test_2)
 :ok
-iex(8)> LCRDT.OrSet.sync(:foo)
+iex(8)> LCRDT.OrSet.sync(:foo_crdt)
 :ok
-iex(9)> LCRDT.OrSet.contains(:bar, :test_1)
+iex(9)> LCRDT.OrSet.contains(:bar_crdt, :test_1)
 true
 ```
 
