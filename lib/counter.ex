@@ -2,7 +2,6 @@ defmodule LCRDT.Counter do
   @moduledoc """
   This represents a simple increasing CRDT counter.
   """
-  @total_stock 100
 
   use LCRDT.CRDT
 
@@ -27,63 +26,53 @@ defmodule LCRDT.Counter do
     GenServer.call(pid, :sum)
   end
 
-  def initial_state(name) do
-    {name, Map.new(), Map.new(), Map.new()}
+  @doc """
+  The total number of stock.
+  This is the max. leases we can allocate across all nodes.
+  """
+  def total_stock(), do: 100
+
+  @doc """
+  The initial state. Two empty counters.
+  """
+  def initial_state() do
+    %{
+      up: Map.new(),
+      down: Map.new()
+    }
   end
 
-  def merge_state({_name, leases, other_up, other_down}, {name, leases, up, down}) do
-    merge_state_counters = fn left, right -> Map.merge(left, right, fn(_k, v1, v2) -> max(v1, v2) end) end
-    {name, leases, merge_state_counters.(other_up, up), merge_state_counters.(other_down, down)}
+  @doc """
+  Merges the two counters by taking the max element-wise.
+  """
+  def merge_state(other_state, state) do
+    fun = fn left, right -> Map.merge(left, right, fn(_k, v1, v2) -> max(v1, v2) end) end
+    %{state | up: fun.(other_state.up, state.up), down: fun.(other_state.down, state.down)}
   end
 
-  def name_from_state(state) do
-    Kernel.elem(state, 0)
-  end
-
-  def prepare({:allocate, amount, process}, {_name, leases, _up, _down} = state) do
-    if Enum.sum(Map.values(leases)) + amount > @total_stock do
-      {:abort, state}
-    else
-      {:ok, add_lease(state, process, amount)}
-    end
-  end
-
-  def commit(body, state1) do
-    IO.inspect(body)
-    state1
-  end
-
-  def abort({:allocate, amount, process}, {name, leases1, up, down}) do
-    leases2 =
-      if Map.has_key?(leases1, process) do
-        Map.update!(leases1, process, fn x -> x - amount end)
-      else
-        leases1
-      end
-    {name, leases2, up, down}
-  end
-
-  def replay({:allocate, amount, process}, state) do
-    add_lease(state, process, amount)
-  end
-
+  @doc """
+  Increments the counter.
+  """
   @impl true
-  def handle_cast(:inc, {name, leases, up, down}) do
-    {:noreply, {name, leases, Map.update(up, name, 1, &(&1 + 1)), down}}
+  def handle_cast(:inc, state) do
+    # TODO: Check for lease violations.
+    {:noreply, %{state | up: Map.update(state.up, state.name, 1, &(&1 + 1))}}
   end
 
+  @doc """
+  Decrements the counter.
+  """
   @impl true
-  def handle_cast(:dec, {name, leases, up, down}) do
-    {:noreply, {name, leases, up, Map.update(down, name, 1, &(&1 + 1))}}
+  def handle_cast(:dec, state) do
+    # TODO: Check for < 0 violations.
+    {:noreply, %{state | down: Map.update(state.down, state.name, 1, &(&1 + 1))}}
   end
 
+  @doc """
+  Estimates the current count.
+  """
   @impl true
-  def handle_call(:sum, _from, {_name, _leases, up, down} = state) do
-    {:reply, Enum.sum(Map.values(up)) - Enum.sum(Map.values(down)), state}
-  end
-
-  defp add_lease({name, leases1, up, down}, process, amount) do
-    leases2 = Map.update(leases1, process, amount, fn x -> x + amount end)
-    {name, leases2, up, down}
+  def handle_call(:sum, _from, state) do
+    {:reply, Enum.sum(Map.values(state.up)) - Enum.sum(Map.values(state.down)), state}
   end
 end

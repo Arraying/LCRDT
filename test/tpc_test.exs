@@ -66,8 +66,9 @@ defmodule LCRDT.TPCTest do
     # We undo the lease manually, so it's reflected in-memory at the application layer as well.
     # The in-memory log of the TPC node will still be incorrect.
     # That's fine though, because it's getting killed next :D
-    GenServer.cast(@bar, {:abort, {:allocate, 1, @foo}})
-    :timer.sleep(@delay)
+    bar_state_old = Counter.dump(@bar)
+    bar_state_new = %{bar_state_old | leases: Map.new()}
+    GenServer.call(@bar, {:test_override_state, bar_state_new}, :infinity)
     assert foo_leases(@bar) == 0
     # If we now crash before preparing it's going to get us into the state we want.
     inject(@faulty, before_prepare(), neutral())
@@ -79,6 +80,6 @@ defmodule LCRDT.TPCTest do
   end
 
   # We get this from baz to ensure the changes propagated to a non-coordinator non-faulty node.
-  defp foo_leases(from), do: Map.get(elem(Counter.dump(from), 1), @foo, 0)
+  defp foo_leases(from), do: Map.get(Counter.dump(from).leases, @foo, 0)
 
 end

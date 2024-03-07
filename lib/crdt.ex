@@ -4,13 +4,9 @@ defmodule LCRDT.CRDT do
   This implements state synchronization and syncing.
   """
 
-  @callback initial_state(term) :: term
+  @callback total_stock() :: term
+  @callback initial_state() :: term
   @callback merge_state(other_state :: term, state :: term) :: term
-  @callback name_from_state(term) :: term
-  @callback prepare(term, term) :: {term, term}
-  @callback commit(term, term) :: term
-  @callback abort(term, term) :: term
-  @callback replay(term, term) :: term
 
   defmacro __using__(_opts) do
     quote do
@@ -40,13 +36,19 @@ defmodule LCRDT.CRDT do
       @impl true
       def init(name) do
         :timer.send_interval(10_000_000, :autosync)
-        {:ok, initial_state(name)}
+        crdt = %{
+          name: name,
+          leases: Map.new(),
+          uncommitted_changes: false,
+        }
+        domain = initial_state()
+        # CRDT state takes priority in terms of conflicts.
+        {:ok, Map.merge(domain, crdt)}
       end
 
       @impl true
       def handle_cast({:request_leases, amount}, state) do
-        name = name_from_state(state)
-        LCRDT.Participant.allocate(name, amount)
+        LCRDT.Participant.allocate(state.name, amount)
         {:noreply, state}
       end
 
@@ -64,26 +66,43 @@ defmodule LCRDT.CRDT do
 
       # <-- CRDT communication -->
       @impl true
-      def handle_cast({:commit, body}, state) do
-        {:noreply, commit(body, state)}
+      def handle_cast({:commit, _body}, state) do
+        # We don't actually care what the body is.
+        # Since this is 2PC, everyone needs to have prepared so we have nothing to do here.
+        {:noreply, %{state | uncommitted_changes: false}}
       end
 
       @impl true
-      def handle_cast({:abort, body}, state) do
-        {:noreply, abort(body, state)}
+      def handle_cast({:abort, {:allocate, amount, process}}, state) do
+        if state.uncommitted_changes do
+          leases =
+            if Map.has_key?(state.leases, process) do
+              Map.update!(state.leases, process, fn x -> x - amount end)
+            else
+              state.leases
+            end
+          {:noreply, %{state | leases: leases, uncommitted_changes: false}}
+        else
+          # We were (one of) the one(s) who aborted.
+          # It's not in our state so we don't need to undo it.
+          {:noreply, state}
+        end
       end
 
       @impl true
-      def handle_call({:prepare, body}, _from, state1) do
-        {res, state2} = prepare(body, state1)
-        IO.puts("#{name_from_state(state1)} got asked to prepare")
-        {:reply, res, state2}
+      def handle_call({:prepare, {:allocate, amount, process} = body}, _from, state) do
+        out(state, "Got asked to prepare #{inspect(body)}")
+        if Enum.sum(Map.values(state.leases)) + amount > total_stock() do
+          {:reply, :abort, state}
+        else
+          {:reply, :ok, %{state | leases: add_leases(state.leases, amount, process), uncommitted_changes: true}}
+        end
       end
 
       @impl true
-      def handle_call({:replay, body}, _from, state) do
-        IO.puts("#{__MODULE__}/#{name_from_state(state)}: Replaying #{inspect(body)}")
-        {:reply, :ok, replay(body, state)}
+      def handle_call({:replay, {:allocate, amount, process} = body}, _from, state) do
+        out(state, "Replaying #{inspect(body)}")
+        {:reply, :ok, %{state | leases: add_leases(state.leases, amount, process)}}
       end
       # <-- /CRDT communication -->
 
@@ -93,14 +112,27 @@ defmodule LCRDT.CRDT do
         {:reply, state, state}
       end
 
+      # This should only ever be used for testing.
+      @impl true
+      def handle_call({:test_override_state, state}, _from, _state) do
+        {:reply, :ok, state}
+      end
+
       # This will receive the sync signal and perform synchronization.
       @impl true
       def handle_info(:autosync, state) do
-        name = name_from_state(state)
-        IO.puts("#{__MODULE__}/#{name}: Performing periodic sync")
-        sync(name)
+        out(state, "Performing periodic sync")
+        sync(state.name)
         {:noreply, state}
       end
+
+      defp get_leases(state), do: Map.get(state.leases, state.name, 0)
+
+      defp add_leases(leases, amount, process) do
+        Map.update(leases, process, amount, fn x -> x + amount end)
+      end
+
+      defp out(state, message), do: IO.puts("#{__MODULE__}/#{state.name}: #{message}")
     end
   end
 end

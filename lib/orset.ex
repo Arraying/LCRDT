@@ -2,7 +2,7 @@ defmodule LCRDT.OrSet do
   @moduledoc """
   This represents an OR-Set CRDT.
   """
-  use LCRDT.CRDT
+  # use LCRDT.CRDT
 
   @doc """
   Whether the set contains an element.
