@@ -4,6 +4,8 @@ defmodule LCRDT.CRDT do
   This implements state synchronization and syncing.
   """
 
+  # TODO: Implement {:deallocate, amount, pid}
+
   @callback total_stock() :: term
   @callback initial_state() :: term
   @callback merge_state(other_state :: term, state :: term) :: term

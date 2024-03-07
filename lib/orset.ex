@@ -2,7 +2,10 @@ defmodule LCRDT.OrSet do
   @moduledoc """
   This represents an OR-Set CRDT.
   """
+
   use LCRDT.CRDT
+
+  # TODO: Implement all kinds of leases.
 
   @doc """
   Whether the set contains an element.
