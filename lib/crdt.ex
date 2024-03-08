@@ -71,7 +71,7 @@ defmodule LCRDT.CRDT do
       @impl true
       def handle_cast({:sync, other_state}, state) do
         merged_state = merge_state(other_state, state)
-        LCRDT.Store.write(merged_state.name, merged_state)
+        LCRDT.Store.write(merged_state.name, %{merged_state | leases: Map.new()})
         {:noreply, merged_state}
       end
 
