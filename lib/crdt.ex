@@ -38,14 +38,21 @@ defmodule LCRDT.CRDT do
       @impl true
       def init(name) do
         :timer.send_interval(10_000_000, :autosync)
+
+        # State priority
+        # 1. crdt
+        # 2. recovered_state
+        # 3. initial_state
+        domain = initial_state()
+        recovered_state = LCRDT.Store.read(name)
         crdt = %{
           name: name,
           leases: Map.new(),
           uncommitted_changes: false,
         }
-        domain = initial_state()
+
         # CRDT state takes priority in terms of conflicts.
-        {:ok, Map.merge(domain, crdt)}
+        {:ok, Map.merge(Map.merge(domain, recovered_state), crdt)}
       end
 
       @impl true
@@ -63,7 +70,9 @@ defmodule LCRDT.CRDT do
 
       @impl true
       def handle_cast({:sync, other_state}, state) do
-        {:noreply, merge_state(other_state, state)}
+        merged_state = merge_state(other_state, state)
+        LCRDT.Store.write(merged_state.name, merged_state)
+        {:noreply, merged_state}
       end
 
       # <-- CRDT communication -->

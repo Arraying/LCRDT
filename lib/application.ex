@@ -13,6 +13,7 @@ defmodule LCRDT.Application do
       _ -> LCRDT.Counter
     end
     LCRDT.Logging.clean_slate()
+    LCRDT.Store.clean_slate()
     children = Enum.map(LCRDT.Network.all_nodes(), &(make_node(&1, crdt)))
     Supervisor.start_link(children, strategy: :one_for_all)
   end

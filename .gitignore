@@ -31,3 +31,4 @@ lcrdt-*.tar
 
 # Custom logs.
 logs/
+crdt_store/
