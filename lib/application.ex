@@ -12,7 +12,17 @@ defmodule LCRDT.Application do
       {:ok, "orset"} -> LCRDT.OrSet
       _ -> LCRDT.Counter
     end
-    children = Enum.map(LCRDT.Network.all_nodes(), &(Supervisor.child_spec({crdt, &1}, id: &1)))
+    LCRDT.Logging.clean_slate()
+    LCRDT.Store.clean_slate()
+    children = Enum.map(LCRDT.Network.all_nodes(), &(make_node(&1, crdt)))
     Supervisor.start_link(children, strategy: :one_for_all)
+  end
+
+  defp make_node(id, crdt) do
+    %{
+      id: {LCRDT.Node, id},
+      start: {LCRDT.Node, :start_link, [crdt, id]},
+      type: :supervisor
+    }
   end
 end

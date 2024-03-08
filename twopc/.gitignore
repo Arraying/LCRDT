@@ -20,15 +20,7 @@ erl_crash.dump
 *.ez
 
 # Ignore package tarball (built via "mix hex.build").
-lcrdt-*.tar
+twopc-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
-
-
-# Elixir language server things.
-.elixir_ls/
-
-# Custom logs.
-logs/
-crdt_store/

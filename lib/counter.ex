@@ -2,6 +2,7 @@ defmodule LCRDT.Counter do
   @moduledoc """
   This represents a simple increasing CRDT counter.
   """
+
   use LCRDT.CRDT
 
   @doc """
@@ -25,31 +26,63 @@ defmodule LCRDT.Counter do
     GenServer.call(pid, :sum)
   end
 
-  def initial_state(name) do
-    {name, Map.new(), Map.new()}
+  @doc """
+  The total number of stock.
+  This is the max. leases we can allocate across all nodes.
+  """
+  def total_stock(), do: 100
+
+  @doc """
+  The initial state. Two empty counters.
+  """
+  def initial_state() do
+    %{
+      up: Map.new(),
+      down: Map.new()
+    }
   end
 
-  def merge_state({_name, other_up, other_down}, {name, up, down}) do
-    merge_state_counters = fn left, right -> Map.merge(left, right, fn(_k, v1, v2) -> max(v1, v2) end) end
-    {name, merge_state_counters.(other_up, up), merge_state_counters.(other_down, down)}
+  @doc """
+  Merges the two counters by taking the max element-wise.
+  """
+  def merge_state(other_state, state) do
+    fun = fn left, right -> Map.merge(left, right, fn(_k, v1, v2) -> max(v1, v2) end) end
+    %{state | up: fun.(other_state.up, state.up), down: fun.(other_state.down, state.down)}
   end
 
-  def name_from_state(state) do
-    Kernel.elem(state, 0)
-  end
-
+  @doc """
+  Increments the counter.
+  """
   @impl true
-  def handle_cast(:inc, {name, up, down}) do
-    {:noreply, {name, Map.update(up, name, 1, &(&1 + 1)), down}}
+  def handle_cast(:inc, state) do
+    if (get_leases(state) < 1) do
+      # TODO: Request more leases or/and return error
+      IO.puts("Lease violation: #{inspect(state)}")
+      {:noreply, state}
+    else
+      {:noreply, %{state | up: Map.update(state.up, state.name, 1, &(&1 + 1)), leases: Map.update(state.leases, state.name, 1, &(&1 - 1))}}
+    end
   end
 
+  @doc """
+  Decrements the counter.
+  """
   @impl true
-  def handle_cast(:dec, {name, up, down}) do
-    {:noreply, {name, up, Map.update(down, name, 1, &(&1 + 1))}}
+  def handle_cast(:dec, state) do
+    if (Enum.sum(Map.values(state.up)) - Enum.sum(Map.values(state.down)) < 1) do
+      # TODO: return error, can't dec anymore
+      IO.puts("Decrement violation: #{inspect(state)}")
+      {:noreply, state}
+    else
+      {:noreply, %{state | down: Map.update(state.down, state.name, 1, &(&1 + 1)), leases: Map.update(state.leases, state.name, 1, &(&1 + 1))}}
+    end
   end
 
+  @doc """
+  Estimates the current count.
+  """
   @impl true
-  def handle_call(:sum, _from, {_name, up, down} = state) do
-    {:reply, Enum.sum(Map.values(up)) - Enum.sum(Map.values(down)), state}
+  def handle_call(:sum, _from, state) do
+    {:reply, Enum.sum(Map.values(state.up)) - Enum.sum(Map.values(state.down)), state}
   end
 end
