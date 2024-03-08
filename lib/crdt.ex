@@ -128,7 +128,7 @@ defmodule LCRDT.CRDT do
         {:noreply, state}
       end
 
-      defp get_leases(state), do: Map.get(state.leases, get_tpc_name(state.name), 0)
+      defp get_leases(state), do: Map.get(state.leases, state.name, 0)
 
       defp add_leases(leases, amount, process) do
         Map.update(leases, process, amount, fn x -> x + amount end)
@@ -136,13 +136,6 @@ defmodule LCRDT.CRDT do
 
       defp out(state, message), do: IO.puts("#{__MODULE__}/#{state.name}: #{message}")
 
-      defp get_tpc_name(name) do
-        # Transform CRDT node name to a TPC ONE
-        # replace "_crdt" with "_tpc" in the atom name
-        name_string = Atom.to_string(name)
-        tpc_name_string = String.replace(name_string, "_crdt", "_tpc")
-        String.to_atom(tpc_name_string)
-      end
     end
   end
 end

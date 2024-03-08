@@ -10,6 +10,10 @@ defmodule LCRDT.CounterTest do
 
   setup do
     {:ok, _} = Application.ensure_all_started(:lcrdt)
+    LCRDT.Participant.allocate(@foo, 33)
+    :timer.sleep(@delay)
+    LCRDT.Participant.allocate(@bar, 33)
+    :timer.sleep(@delay)
     on_exit(fn -> Application.stop(:lcrdt) end)
   end
 
