@@ -55,8 +55,13 @@ defmodule LCRDT.Counter do
   """
   @impl true
   def handle_cast(:inc, state) do
-    # TODO: Check for lease violations.
-    {:noreply, %{state | up: Map.update(state.up, state.name, 1, &(&1 + 1))}}
+    if (get_leases(state) < 1) do
+      # TODO: Request more leases or/and return error
+      IO.puts("Lease violation: #{inspect(state)}")
+      {:noreply, state}
+    else
+      {:noreply, %{state | up: Map.update(state.up, state.name, 1, &(&1 + 1)), leases: Map.update(state.leases, state.name, 1, &(&1 - 1))}}
+    end
   end
 
   @doc """
@@ -64,8 +69,13 @@ defmodule LCRDT.Counter do
   """
   @impl true
   def handle_cast(:dec, state) do
-    # TODO: Check for < 0 violations.
-    {:noreply, %{state | down: Map.update(state.down, state.name, 1, &(&1 + 1))}}
+    if (Enum.sum(Map.values(state.up)) - Enum.sum(Map.values(state.down)) < 1) do
+      # TODO: return error, can't dec anymore
+      IO.puts("Decrement violation: #{inspect(state)}")
+      {:noreply, state}
+    else
+      {:noreply, %{state | down: Map.update(state.down, state.name, 1, &(&1 + 1)), leases: Map.update(state.leases, state.name, 1, &(&1 + 1))}}
+    end
   end
 
   @doc """
