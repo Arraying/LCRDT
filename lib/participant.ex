@@ -1,9 +1,14 @@
 defmodule LCRDT.Participant do
   alias LCRDT.Logging
   alias LCRDT.Network
+  alias LCRDT.Store
   import LCRDT.Injections
   import LCRDT.Injections.Crash
   use GenServer
+
+  # TODO: Defer follower recovery if coordinator is recovering.
+
+  @coordinator_storage :coordinator_state
 
   # All state (only some of it relevant to non-leader)
   # Name - the PID of the process
@@ -45,8 +50,9 @@ defmodule LCRDT.Participant do
 
   @impl true
   def init({name, application_pid}) do
+    # TODO: Check if leader is alive during follower recovery.
     followers =
-      if name != Network.coordinator() do
+      unless is_coordinator(name) do
         # We indicate that we are a follower.
         GenServer.cast(Network.coordinator(), {:new_follower, name})
         []
@@ -60,22 +66,72 @@ defmodule LCRDT.Participant do
     # Go through all the changes in the log and apply them.
     # This is such that we can get the CRDT into the correct state.
     apply_logs(logs, application_pid)
-    # Check for retransmissions.
-    case Logging.peek_change(logs) do
-      # We have to re-transmit our vote response because we're not sure what happened.
-      # If a decision was made, the coordinator will recognize this is a retransmission and tell us what happened.
-      {:found, tid} ->
-        # We only send actions we actually commit, so this will always be a commit.
-        # We can pretty easily recover from this.
-        GenServer.cast(Network.coordinator(), {:vote_response, tid, name, :commit})
-      # At this point we do not know what we are doing, and recovery is a bit more tricky.
-      :not_found ->
-        # We have to send an explicit recovery signal and let the coordinator take charge in our recovery.
-        GenServer.cast(Network.coordinator(), {:recovery, name})
-    end
 
-    state = %PState{name: name, application_pid: application_pid, logs: logs, followers: followers}
-    {:ok, state}
+    # Read the new state.
+    state0 = %PState{name: name, application_pid: application_pid, logs: logs, followers: followers}
+    state1 =
+      if is_coordinator(name) do
+        # Logs are handled separately so we will purge those.
+        Map.merge(state0, Store.read(@coordinator_storage))
+      else
+        state0
+      end
+
+    # Different strategies depending on if coordinator or regular server.
+    state2 =
+      if is_coordinator(name) do
+        # Check what state we are in.
+        out(name, "Started coordinator recovery")
+        cond do
+          # We've started but we haven't sent out the prepares yet.
+          state1.stage == :started ->
+            out(name, "Recovering in started state")
+            # We send out the prepares.
+            Enum.each(state1.followers, fn follower_pid -> resend_last_prepare_request(state1, follower_pid) end)
+            # We have to change the state too.
+            state2 = %{state1 | stage: :prepared}
+            snapshot_coordinator(state2)
+            state2
+          # We've sent all prepares, but we're not sure if we have received all responses.
+          state1.stage == :prepared ->
+            out(name, "Recovering in prepared state")
+            # Take the ones for whom we do not yet know their response.
+            unknown = state1.followers -- Map.keys(state1.votes)
+            # We re-send prepares to those.
+            Enum.each(unknown, fn follower_pid -> GenServer.cast(follower_pid, {:recovery, state1.tid}) end)
+            state1
+          # Finalized, so we need to re-send finalized messages.
+          state1.stage == :finalized ->
+            out(name, "Recovering in finalized state")
+            # We re-send out our responses.
+            Enum.each(state1.followers, fn follower_pid ->
+              unless follower_pid == name do
+                resend_last_outcome(state1, follower_pid, state1.tid)
+              end
+            end)
+            state1
+          # We're idle, so we don't need to recover.
+          true ->
+            state1
+        end
+      else
+        out(name, "Started follower recovery")
+        # Check for retransmissions.
+        case Logging.peek_change(logs) do
+          # We have to re-transmit our vote response because we're not sure what happened.
+          # If a decision was made, the coordinator will recognize this is a retransmission and tell us what happened.
+          {:found, tid} ->
+            # We only send actions we actually commit, so this will always be a commit.
+            # We can pretty easily recover from this.
+            GenServer.cast(Network.coordinator(), {:vote_response, tid, name, :commit})
+          # At this point we do not know what we are doing, and recovery is a bit more tricky.
+          :not_found ->
+            # We have to send an explicit recovery signal and let the coordinator take charge in our recovery.
+            GenServer.cast(Network.coordinator(), {:recovery, name})
+        end
+        state1
+      end
+    {:ok, state2}
   end
 
   @impl true
@@ -91,7 +147,7 @@ defmodule LCRDT.Participant do
   def handle_cast({:start, body}, state1) do
     cond do
       # Edge case: trying to start with non-coordinator.
-      state1.name != Network.coordinator() ->
+      not is_coordinator(state1) ->
         out(state1, "ERROR, only the coordinator can handle starts")
         {:noreply, state1}
       # Edge case: trying to start during a concurrent transaction.
@@ -101,14 +157,23 @@ defmodule LCRDT.Participant do
       # Regular execution.
       true ->
         # We assign this a new transaction ID.
-        state2 = %{state1 | tid: :erlang.make_ref(), body: body}
+        state2 = %{state1 | stage: :started, tid: :erlang.make_ref(), body: body}
+        snapshot_coordinator(state2)
+        if activated(state2.crashpoints, before_prepare_request()) do
+          raise("hit before_prepare_request crashpoint")
+        end
         # Now we must tell all followers to prepare.
         Enum.each(state2.followers, fn follower_pid ->
           GenServer.cast(follower_pid, {:prepare_request, state2.tid, body})
           out(state2, "Sent a prepare request to follower #{follower_pid}")
         end)
         # We now set the state to be in preparation, this is needed for recovery.
-        {:noreply, %{state2 | stage: :prepared}}
+        state3 = %{state2 | stage: :prepared}
+        snapshot_coordinator(state3)
+        if activated(state3.crashpoints, after_prepare_request()) do
+          raise("hit after_prepare_request crashpoint")
+        end
+        {:noreply, state3}
     end
   end
 
@@ -182,7 +247,19 @@ defmodule LCRDT.Participant do
     {:noreply, finalize(tid, outcome, body, state)}
   end
 
+  def handle_cast({:recovery, tid}, state) when is_reference(tid) do
+    out(state, "Retransmitting vote after coordinator crash")
+    # Handled by followers.
+    # In this situation, all votes should be re-sent for the specific transaction ID.
+    # Since we have a FIFO mailbox, we know that IF the prepare came, it came before this.
+    # So we can check the log for this TID. If there is an uncommitted, change, OK. Else, abort.
+    vote = Logging.find_vote(state.logs, tid)
+    GenServer.cast(Network.coordinator(), {:vote_response, tid, state.name, vote})
+    {:noreply, state}
+  end
+
   def handle_cast({:recovery, recovered_pid}, state1) do
+    # Handled by coordinator.
     # The only thing we need to do here is if prepares have been sent out, we abort.
     # We have nothing in the log for this transaction, so we either:
     # 1) Never received this message; or
@@ -193,6 +270,7 @@ defmodule LCRDT.Participant do
       # Here we have to hard abort.
       # We can't send the abort message since we don't have the TID.
       # But we can manipulate internal state and re-call the function.
+      out(state1, "We have to abort due to crashed follower")
       state2 = %{state1 | votes: Map.put(state1.votes, recovered_pid, :abort)}
       state3 = try_action(state2)
       {:noreply, state3}
@@ -218,8 +296,12 @@ defmodule LCRDT.Participant do
       # Naturally, we abort if at least one node says to abort.
       action = if num_aborts == 0, do: :commit, else: :abort
       # We finalize ourselves FIRST so we can do proper crash recovery.
-      state3 = finalize(state2.tid, action, state2.body, state2)
+      state3 = %{finalize(state2.tid, action, state2.body, state2, true) | stage: :finalized}
+      snapshot_coordinator(state3)
       out(state3, "Finalized own state")
+      if activated(state3.crashpoints, before_finalize()) do
+        raise("hit before_finalize crashpoint")
+      end
       # Broadcast the outcome to all followers.
       Enum.each(state3.followers, fn follower_pid ->
         unless follower_pid == state3.name do
@@ -230,23 +312,31 @@ defmodule LCRDT.Participant do
       # We are done with this now!
       # We can reset the state back to blank now.
       out(state3, "Resetting the state")
-      %{state3 | tid: nil, body: nil, body_previous: state3.body, stage: :idle, votes: Map.new()}
+      state4 = %{state3 | tid: nil, body: nil, body_previous: state3.body, stage: :idle, votes: Map.new()}
+      snapshot_coordinator(state4)
+      state4
     else
       # Noop.
       state2
     end
   end
 
-  defp finalize(tid, outcome, body, state) do
-    out(state, "Received finalize")
-    logs = case outcome do
-      :commit ->
-        GenServer.cast(state.application_pid, {:commit, body})
-        Logging.log_commit(state.name, state.logs, tid)
-      :abort ->
-        GenServer.cast(state.application_pid, {:abort, body})
-        Logging.log_abort(state.name, state.logs, tid)
-    end
+  defp finalize(tid, outcome, body, state, force \\ false) do
+    logs =
+      if (Logging.find_outcome(state.logs, tid) == :not_found) or force do
+        out(state, "Received new finalize")
+        case outcome do
+          :commit ->
+            GenServer.cast(state.application_pid, {:commit, body})
+            Logging.log_commit(state.name, state.logs, tid)
+          :abort ->
+            GenServer.cast(state.application_pid, {:abort, body})
+            Logging.log_abort(state.name, state.logs, tid)
+        end
+      else
+        out(state, "Re-received finalize")
+        state.logs
+      end
     %{state | logs: logs}
   end
 
@@ -266,8 +356,22 @@ defmodule LCRDT.Participant do
   end
 
   defp resend_last_prepare_request(state, syncing_pid) do
+    out(state, "Re-sent prepare request to #{syncing_pid}")
     GenServer.cast(syncing_pid, {:prepare_request, state.tid, state.body})
   end
 
-  defp out(state, message), do: IO.puts("#{__MODULE__}/#{state.name}: #{message}")
+  defp snapshot_coordinator(state1) do
+    # We NEVER save crashpoints or lagpoints.
+    # Logs should be cleared as they are recovered separately.
+    state2 = %{state1 | crashpoints: neutral(), lagpoints: neutral()}
+    state3 = Map.delete(state2, :logs)
+    Store.write(@coordinator_storage, state3)
+    :ok
+  end
+
+  defp is_coordinator(name) when is_atom(name), do: name == Network.coordinator()
+  defp is_coordinator(state), do: state.name == Network.coordinator()
+
+  defp out(state, message) when (not is_atom(state)), do: IO.puts("#{__MODULE__}/#{state.name}: #{message}")
+  defp out(name, message), do: out(%{name: name}, message)
 end

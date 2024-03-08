@@ -21,6 +21,18 @@ defmodule LCRDT.Logging do
     end
   end
 
+  def find_vote(logs, tid) do
+    case logs do
+      # Base case: we found no change, so it must have been an abort.
+      [] ->
+        :abort
+      [{:change, ^tid, _} | _] ->
+        :ok
+      [_ | next] ->
+        find_vote(next, tid)
+    end
+  end
+
   def find_outcome(logs, tid) do
     case logs do
       # Base case: we could not find a committed change corresponding to that transaction.

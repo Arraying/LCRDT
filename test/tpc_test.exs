@@ -10,6 +10,7 @@ defmodule LCRDT.TPCTest do
   @foo :foo_crdt
   @bar :bar_crdt
   @baz :baz_crdt
+  @coordinator :coordinator
   @faulty :bar_tpc
 
   setup do
@@ -77,6 +78,48 @@ defmodule LCRDT.TPCTest do
     :timer.sleep(@delay)
     # We should now be able to see both.
     assert foo_leases(@bar) == 3
+  end
+
+  test "commit, coordinator crashes after start" do
+    inject(@coordinator, before_prepare_request(), neutral())
+    Participant.allocate(@foo, 1)
+    :timer.sleep(@delay)
+    assert foo_leases(@baz) == 1
+  end
+
+  test "abort, coordinator crashes after sending prepare requests (never receives)" do
+    inject(@coordinator, after_prepare_request(), neutral())
+    Participant.allocate(@foo, 1)
+    :timer.sleep(@delay)
+    # At this point, it has not received its own prepare.
+    # The log cannot show a commit so we are cautious and abort.
+    assert foo_leases(@baz) == 0
+  end
+
+  test "commit, coordinator crashes after sending prepare requests (receives)" do
+    inject(@coordinator, after_prepare(), neutral())
+    Participant.allocate(@foo, 1)
+    :timer.sleep(@delay)
+    # At this point we know that we OK'd, so when we recover we should hopefully be able to commit.
+    assert foo_leases(@baz) == 1
+  end
+
+  test "commit, coordinator crashes before sending out finalize" do
+    inject(@coordinator, before_finalize(), neutral())
+    Participant.allocate(@foo, 1)
+    :timer.sleep(@delay)
+    assert foo_leases(@foo) == 1
+    assert foo_leases(@bar) == 1
+    assert foo_leases(@baz) == 1
+  end
+
+  test "abort, coordinator crashes before sending out finalize" do
+    inject(@coordinator, before_finalize(), neutral())
+    Participant.allocate(@foo, 123456)
+    :timer.sleep(@delay)
+    assert foo_leases(@foo) == 0
+    assert foo_leases(@bar) == 0
+    assert foo_leases(@baz) == 0
   end
 
   # We get this from baz to ensure the changes propagated to a non-coordinator non-faulty node.
