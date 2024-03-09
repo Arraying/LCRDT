@@ -4,7 +4,6 @@ defmodule LCRDT.CRDT do
   This implements state synchronization and syncing.
   """
 
-  # TODO: Implement {:deallocate, amount, pid}
 
   @callback total_stock() :: term
   @callback initial_state() :: term
@@ -22,6 +21,10 @@ defmodule LCRDT.CRDT do
 
       def request_leases(pid, amount) do
         GenServer.cast(pid, {:request_leases, amount})
+      end
+
+      def revoke_leases(pid, amount) do
+        GenServer.cast(pid, {:revoke_leases, amount})
       end
 
       # Manually start a sync.
@@ -58,6 +61,12 @@ defmodule LCRDT.CRDT do
       @impl true
       def handle_cast({:request_leases, amount}, state) do
         LCRDT.Participant.allocate(state.name, amount)
+        {:noreply, state}
+      end
+
+      @impl true
+      def handle_cast({:revoke_leases, amount}, state) do
+        LCRDT.Participant.deallocate(state.name, amount)
         {:noreply, state}
       end
 
@@ -115,6 +124,39 @@ defmodule LCRDT.CRDT do
         out(state, "Replaying #{inspect(body)}")
         {:reply, :ok, %{state | leases: add_leases(state.leases, amount, process)}}
       end
+
+      @impl true
+      def handle_cast({:abort, {:deallocate, amount, process}}, state) do
+        if state.uncommitted_changes do
+          leases =
+            if Map.has_key?(state.leases, process) do
+              Map.update!(state.leases, process, fn x -> x - amount end)
+            else
+              state.leases
+            end
+          {:noreply, %{state | leases: leases, uncommitted_changes: true}}
+        else
+          # We were (one of) the one(s) who aborted.
+          # It's not in our state so we don't need to undo it.
+          {:noreply, state}
+        end
+      end
+
+      @impl true
+      def handle_call({:prepare, {:deallocate, amount, process} = body}, _from, state) do
+        out(state, "Preparing to deallocate #{inspect(body)}")
+        if Enum.sum(Map.values(state.leases)) - amount >= 0 do
+          {:reply, :abort, state}
+        else
+          {:reply, :ok, %{state | leases: remove_leases(state.leases, amount, process), uncommitted_changes: true}}
+        end
+      end
+
+      @impl true
+      def handle_call({:replay, {:deallocate, amount, process} = body}, _from, state) do
+        out(state, "Replaying deallocation #{inspect(body)}")
+        {:reply, :ok, %{state | leases: remove_leases(state.leases, amount, process)}}
+      end
       # <-- /CRDT communication -->
 
       # Just returns the state.
@@ -141,6 +183,15 @@ defmodule LCRDT.CRDT do
 
       defp add_leases(leases, amount, process) do
         Map.update(leases, process, amount, fn x -> x + amount end)
+      end
+
+      defp remove_leases(leases, amount, process) do
+        case Map.get(leases, process) do
+          nil -> leases
+          current_amount ->
+            new_amount = max(current_amount - amount, 0)
+            Map.update(leases, process, new_amount, fn x -> x - amount end)
+        end
       end
 
       defp out(state, message), do: IO.puts("#{__MODULE__}/#{state.name}: #{message}")
