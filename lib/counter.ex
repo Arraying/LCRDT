@@ -26,6 +26,11 @@ defmodule LCRDT.Counter do
     GenServer.call(pid, :sum)
   end
 
+  def can_deallocate?(state, amount, _process) do
+    total = Enum.sum(Map.values(state.leases))
+    total - amount >= 0
+  end
+
   @doc """
   The total number of stock.
   This is the max. leases we can allocate across all nodes.

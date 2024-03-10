@@ -8,6 +8,7 @@ defmodule LCRDT.CRDT do
   @callback total_stock() :: term
   @callback initial_state() :: term
   @callback merge_state(other_state :: term, state :: term) :: term
+  @callback can_deallocate?(state :: term, amount :: term, process :: term) :: term
 
   defmacro __using__(_opts) do
     quote do
@@ -23,8 +24,8 @@ defmodule LCRDT.CRDT do
         GenServer.cast(pid, {:request_leases, amount})
       end
 
-      def revoke_leases(pid, amount) do
-        GenServer.cast(pid, {:revoke_leases, amount})
+      def deallocate_leases(pid, amount) do
+        GenServer.cast(pid, {:deallocate_leases, amount})
       end
 
       # Manually start a sync.
@@ -65,7 +66,7 @@ defmodule LCRDT.CRDT do
       end
 
       @impl true
-      def handle_cast({:revoke_leases, amount}, state) do
+      def handle_cast({:deallocate_leases, amount}, state) do
         LCRDT.Participant.deallocate(state.name, amount)
         {:noreply, state}
       end
@@ -130,11 +131,11 @@ defmodule LCRDT.CRDT do
         if state.uncommitted_changes do
           leases =
             if Map.has_key?(state.leases, process) do
-              Map.update!(state.leases, process, fn x -> x - amount end)
+              Map.update!(state.leases, process, fn x -> x + amount end)
             else
-              state.leases
+              Map.put(state.leases, process, amount)
             end
-          {:noreply, %{state | leases: leases, uncommitted_changes: true}}
+          {:noreply, %{state | leases: leases, uncommitted_changes: false}}
         else
           # We were (one of) the one(s) who aborted.
           # It's not in our state so we don't need to undo it.
@@ -145,10 +146,10 @@ defmodule LCRDT.CRDT do
       @impl true
       def handle_call({:prepare, {:deallocate, amount, process} = body}, _from, state) do
         out(state, "Preparing to deallocate #{inspect(body)}")
-        if Enum.sum(Map.values(state.leases)) - amount >= 0 do
-          {:reply, :abort, state}
-        else
+        if can_deallocate?(state, amount, process) do
           {:reply, :ok, %{state | leases: remove_leases(state.leases, amount, process), uncommitted_changes: true}}
+        else
+          {:reply, :abort, state}
         end
       end
 
@@ -189,7 +190,7 @@ defmodule LCRDT.CRDT do
         case Map.get(leases, process) do
           nil -> leases
           current_amount ->
-            new_amount = max(current_amount - amount, 0)
+            new_amount = current_amount - amount
             Map.update(leases, process, new_amount, fn x -> x - amount end)
         end
       end

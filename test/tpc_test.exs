@@ -83,29 +83,28 @@ defmodule LCRDT.TPCTest do
   test "deallocate, no crashes" do
     Participant.deallocate(@foo, 1)
     :timer.sleep(@delay)
-    assert foo_leases(@baz) == 0
+    assert foo_leases(@foo) == 0
   end
 
   test "deallocate, follower crashes before prepare" do
     inject(@faulty, before_prepare(), neutral())
     Participant.deallocate(@foo, 1)
     :timer.sleep(@delay)
-    assert foo_leases(@baz) == 0
+    assert foo_leases(@foo) == 0
   end
 
   test "deallocate, follower crashes before sending vote" do
     inject(@faulty, during_prepare(), neutral())
     Participant.deallocate(@foo, 1)
     :timer.sleep(@delay)
-    assert foo_leases(@baz) == 0
+    assert foo_leases(@foo) == 0
   end
 
   test "deallocate, follower crashes after sending vote" do
     inject(@faulty, after_prepare(), neutral())
     Participant.deallocate(@foo, 1)
     :timer.sleep(@delay)
-    assert foo_leases(@bar) == 0
-    assert foo_leases(@baz) == 0
+    assert foo_leases(@foo) == 0
   end
 
   test "deallocate, follower crashes after sending vote and another transaction started" do
@@ -117,6 +116,7 @@ defmodule LCRDT.TPCTest do
     inject(@faulty, before_prepare(), neutral())
     Participant.deallocate(@foo, 1)
     :timer.sleep(@delay)
+    assert foo_leases(@foo) == 1
   end
 
   test "commit, coordinator crashes after start" do
