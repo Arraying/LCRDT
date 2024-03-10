@@ -55,12 +55,12 @@ defmodule LCRDT.Counter do
   """
   @impl true
   def handle_cast(:inc, state) do
-    if (get_leases(state) < 1) do
+    if get_leases(state) - self_counter(state) <= 0 do
       # TODO: Request more leases or/and return error
       IO.puts("Lease violation: #{inspect(state)}")
       {:noreply, state}
     else
-      {:noreply, %{state | up: Map.update(state.up, state.name, 1, &(&1 + 1)), leases: Map.update(state.leases, state.name, 1, &(&1 - 1))}}
+      {:noreply, %{state | up: Map.update(state.up, state.name, 1, &(&1 + 1))}}
     end
   end
 
@@ -69,12 +69,12 @@ defmodule LCRDT.Counter do
   """
   @impl true
   def handle_cast(:dec, state) do
-    if (Enum.sum(Map.values(state.up)) - Enum.sum(Map.values(state.down)) < 1) do
+    if sum_counter(state) <= 0 do
       # TODO: return error, can't dec anymore
       IO.puts("Decrement violation: #{inspect(state)}")
       {:noreply, state}
     else
-      {:noreply, %{state | down: Map.update(state.down, state.name, 1, &(&1 + 1)), leases: Map.update(state.leases, state.name, 1, &(&1 + 1))}}
+      {:noreply, %{state | down: Map.update(state.down, state.name, 1, &(&1 + 1))}}
     end
   end
 
@@ -83,6 +83,10 @@ defmodule LCRDT.Counter do
   """
   @impl true
   def handle_call(:sum, _from, state) do
-    {:reply, Enum.sum(Map.values(state.up)) - Enum.sum(Map.values(state.down)), state}
+    {:reply, sum_counter(state), state}
   end
+
+  defp sum_counter(state), do: Enum.sum(Map.values(state.up)) - Enum.sum(Map.values(state.down))
+
+  defp self_counter(state), do: Map.get(state.up, state.name, 0) - Map.get(state.down, state.name, 0)
 end
