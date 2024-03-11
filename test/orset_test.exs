@@ -33,6 +33,33 @@ defmodule LCRDT.OrSetTest do
     assert OrSet.contains(@foo, id, item_name) == false
   end
 
+  test "we cant increment on merge leading to surpassing the the stock" do
+    id = 5
+    id_2 = 6
+    item_name = :apple
+    LCRDT.Participant.allocate(@baz, OrSet.total_stock() - 2)
+    :timer.sleep(@delay)
+    LCRDT.Participant.allocate(@foo, 1)
+    :timer.sleep(@delay)
+    LCRDT.Participant.allocate(@bar, 1)
+    :timer.sleep(@delay)
+
+    OrSet.add(@foo, id, item_name)
+    :timer.sleep(@delay)
+    assert OrSet.contains(@foo, id, item_name) == true
+
+    # We can't add the item to other processes, because we don't have enough stock.
+    OrSet.sync(@foo)
+    :timer.sleep(@delay)
+
+    OrSet.add(@bar, id_2, item_name)
+    :timer.sleep(@delay)
+    assert OrSet.contains(@bar, id_2, item_name) == true
+
+    LCRDT.Participant.deallocate(@baz, OrSet.total_stock() - 1)
+    :timer.sleep(@delay)
+  end
+
   test "we cant decrement below zero" do
     id = 5
     item_name = :apple
