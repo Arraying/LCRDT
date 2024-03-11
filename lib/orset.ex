@@ -26,13 +26,6 @@ defmodule LCRDT.OrSet do
     GenServer.cast(pid, {:remove, unique_id, item})
   end
 
-  @doc """
-  Deallocates leases for an element in the set.
-  """
-  def deallocate_lease(pid, key, amount) do
-    GenServer.cast(pid, {:deallocate_lease, key, amount})
-  end
-
   def can_deallocate?(state, amount, _process) do
     get_leases(state) - most_used_item_count(state) - amount >= 0
   end
@@ -105,7 +98,8 @@ defmodule LCRDT.OrSet do
   defp sum_item(state, item) do
     counter = state.data |> Map.keys() |> Enum.filter(fn {_, i} -> i == item end)
     |> Enum.map(fn {unique_id, _} -> exists?(state, unique_id, item) end)
-    |> Enum.count(fn {exists?, _e} -> exists? end)
+    # Changes to state from exists are ignored
+    |> Enum.count(fn {exists?, _} -> exists? end)
     counter
   end
 
