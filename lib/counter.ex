@@ -28,8 +28,7 @@ defmodule LCRDT.Counter do
 
   def can_deallocate?(state, amount, process) do
     current_leases = Map.get(state.leases, process, 0)
-    inc_dec_res = Map.get(state.up, process, 0) - Map.get(state.down, process, 0)
-    current_leases - inc_dec_res - amount >= 0
+    current_leases - get_counter(state, process) - amount >= 0
   end
 
   @doc """
@@ -61,7 +60,7 @@ defmodule LCRDT.Counter do
   """
   @impl true
   def handle_cast(:inc, state) do
-    if get_leases(state) - self_counter(state) <= 0 do
+    if get_leases(state) - get_counter(state, state.name) <= 0 do
       # TODO: Request more leases or/and return error
       IO.puts("Lease violation: #{inspect(state)}")
       {:noreply, state}
@@ -94,5 +93,5 @@ defmodule LCRDT.Counter do
 
   defp sum_counter(state), do: Enum.sum(Map.values(state.up)) - Enum.sum(Map.values(state.down))
 
-  defp self_counter(state), do: Map.get(state.up, state.name, 0) - Map.get(state.down, state.name, 0)
+  defp get_counter(state, process), do: Map.get(state.up, process, 0) - Map.get(state.down, process, 0)
 end
