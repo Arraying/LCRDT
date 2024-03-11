@@ -116,7 +116,7 @@ defmodule LCRDT.TPCTest do
     inject(@faulty, before_prepare(), neutral())
     Participant.deallocate(@foo, 1)
     :timer.sleep(@delay)
-    assert foo_leases(@foo) == 1
+    assert foo_leases(@foo) == 2
   end
 
   test "commit, coordinator crashes after start" do

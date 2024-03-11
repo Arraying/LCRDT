@@ -105,6 +105,6 @@ defmodule LCRDT.OrSet do
   defp merge_tuples({p1, p2}, {q1, q2}), do: {MapSet.union(p1, q1), MapSet.union(p2, q2)}
 
   defp available_leases(pid) do
-    total_stock() - Map.values(leases(pid)) |> Enum.sum()
+    total_stock() - (Map.values(leases(pid)) |> Enum.sum())
   end
 end
