@@ -2,6 +2,14 @@
 
 First, launch the shell. This will bind three CvRDTs under `:foo_crdt`, `:bar_crdt` and `:baz_crdt`.
 
+
+## Testing
+
+It is important to run the test without running the application.
+```
+mix test --no-start
+```
+
 ## Pre-requisites
 In order to run the counter functionalities below, the corresponding CvRDT must have enough leases to be able to increment or add to its configuration. The default configuration is that each node has 0 leases. To add leases to the `:foo_crdt` node, you can use the following command,
 allocating 5 leases:
