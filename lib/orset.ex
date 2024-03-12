@@ -68,7 +68,7 @@ defmodule LCRDT.OrSet do
       key = {unique_id, item}
       map2 = insert(state.data, key)
       {add, remove} = Map.fetch!(map2, key)
-      map3 = Map.put(map2, key, {MapSet.put(add, :erlang.make_ref()), remove})
+      map3 = Map.put(map2, key, {MapSet.put(add, {state.name, :erlang.make_ref()}), remove})
       {:noreply, %{state | data: map3}}
     end
   end
@@ -84,7 +84,7 @@ defmodule LCRDT.OrSet do
 
   @impl true
   def handle_call({:contains, unique_id, item}, _from, state) do
-    {exists?, state2} = exists?(state, unique_id, item)
+    {exists?, _, state2} = exists?(state, unique_id, item)
     {:reply, exists?, state2}
   end
 
@@ -96,10 +96,19 @@ defmodule LCRDT.OrSet do
 
   # Number of occurrences in baskets of an item
   defp sum_item(state, item) do
-    counter = state.data |> Map.keys() |> Enum.filter(fn {_, i} -> i == item end)
-    |> Enum.map(fn {unique_id, _} -> exists?(state, unique_id, item) end)
+    counter = state.data
+    |> Map.keys()
+    |> Enum.filter(fn {_, i} -> i == item end)
+    |> Enum.map(fn {unique_id, _} ->
+      {exists?, owners, _} = exists?(state, unique_id, item)
+      if exists? do
+        Enum.count(owners, fn owner -> owner == state.name end)
+      else
+        0
+      end
+    end)
     # Changes to state from exists are ignored
-    |> Enum.count(fn {exists?, _} -> exists? end)
+    |> Enum.sum()
     counter
   end
 
@@ -115,6 +124,18 @@ defmodule LCRDT.OrSet do
     key = {unique_id, item}
     map2 = insert(state.data, key)
     {add, remove} = Map.fetch!(map2, key)
-    {MapSet.size(MapSet.difference(add, remove)) > 0, %{state | data: map2}}
+    difference_set = MapSet.difference(add, remove)
+    difference_list = MapSet.to_list(difference_set)
+    owners = Enum.map(difference_list, &(Kernel.elem(&1, 0)))
+    # Without the owners when we sync:
+    # foo: (:a, [123], [])
+    # bar: (:a, [345], [])
+    # res: (:a, [123, 345], [])
+    # We need to keep track of the owners so we can see if we
+    # can account for it when seeing if we have leases:
+    # foo: (:a, [(foo, 123)], [])
+    # bar: (:a, [(bar, 345)], [])
+    # res: (:a, [(foo, 123), (bar, 345)], [])
+    {MapSet.size(difference_set) > 0, owners, %{state | data: map2}}
   end
 end

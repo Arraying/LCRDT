@@ -46,7 +46,7 @@ defmodule LCRDT.OrSetTest do
     :timer.sleep(@delay)
     assert OrSet.contains(@foo, @id, @item_name) == true
     assert OrSet.contains(@foo, id2, item_name2) == true
-    assert OrSet.contains(@foo, id3, item_name3) == false
+    assert OrSet.contains(@foo, id3, item_name3) == true
   end
 
   # TODO: fix
