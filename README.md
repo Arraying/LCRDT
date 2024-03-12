@@ -2,6 +2,14 @@
 
 First, launch the shell. This will bind three CvRDTs under `:foo_crdt`, `:bar_crdt` and `:baz_crdt`.
 
+## Testing
+
+It is important to run the test without running the application.
+```
+mix test --no-start
+```
+
+
 ## Increment-Decrement Counter
 ```
 CRDT="counter" iex -S mix
