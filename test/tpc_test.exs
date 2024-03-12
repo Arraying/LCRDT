@@ -14,6 +14,7 @@ defmodule LCRDT.TPCTest do
   @faulty :bar_tpc
 
   setup do
+    LCRDT.Environment.use_crdt(Counter)
     {:ok, _} = Application.ensure_all_started(:lcrdt)
     on_exit(fn -> Application.stop(:lcrdt) end)
   end

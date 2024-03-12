@@ -9,6 +9,7 @@ defmodule LCRDT.CounterTest do
   @baz :baz_crdt
 
   setup do
+    LCRDT.Environment.use_crdt(Counter)
     {:ok, _} = Application.ensure_all_started(:lcrdt)
     on_exit(fn -> Application.stop(:lcrdt) end)
   end
@@ -20,7 +21,7 @@ defmodule LCRDT.CounterTest do
   end
 
   test "we cant increment more than the stock" do
-    LCRDT.Participant.allocate(@foo, Counter.total_stock() + 1)
+    LCRDT.Participant.allocate(@foo, LCRDT.Environment.get_stock() + 1)
     :timer.sleep(@delay)
 
     Counter.inc(@foo)

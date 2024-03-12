@@ -32,12 +32,6 @@ defmodule LCRDT.Counter do
   end
 
   @doc """
-  The total number of stock.
-  This is the max. leases we can allocate across all nodes.
-  """
-  def total_stock(), do: 100
-
-  @doc """
   The initial state. Two empty counters.
   """
   def initial_state() do

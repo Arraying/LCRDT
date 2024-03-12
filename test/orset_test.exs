@@ -11,7 +11,7 @@ defmodule LCRDT.OrSetTest do
   @item_name :apple
 
   setup do
-    System.put_env("CRDT", "orset")
+    LCRDT.Environment.use_crdt(OrSet)
     {:ok, _} = Application.ensure_all_started(:lcrdt)
     on_exit(fn -> Application.stop(:lcrdt) end)
   end
@@ -24,7 +24,7 @@ defmodule LCRDT.OrSetTest do
   end
 
   test "we cant increment more than the stock" do
-    LCRDT.Participant.allocate(@foo, OrSet.total_stock() + 1)
+    LCRDT.Participant.allocate(@foo, LCRDT.Environment.get_stock() + 1)
     :timer.sleep(@delay)
 
     OrSet.add(@foo, @id, @item_name)
@@ -52,7 +52,7 @@ defmodule LCRDT.OrSetTest do
   # TODO: fix
   test "increment successfully an already added product with the last lease (and a new id)" do
     id_2 = 6
-    LCRDT.Participant.allocate(@baz, OrSet.total_stock() - 2)
+    LCRDT.Participant.allocate(@baz, LCRDT.Environment.get_stock() - 2)
     :timer.sleep(@delay)
     LCRDT.Participant.allocate(@foo, 1)
     :timer.sleep(@delay)
@@ -70,9 +70,6 @@ defmodule LCRDT.OrSetTest do
     :timer.sleep(@delay)
     # Currently fails
     assert OrSet.contains(@bar, id_2, @item_name) == true
-
-    LCRDT.Participant.deallocate(@baz, OrSet.total_stock() - 1)
-    :timer.sleep(@delay)
   end
 
   test "we cant decrement below zero" do
