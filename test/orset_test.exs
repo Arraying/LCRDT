@@ -11,6 +11,7 @@ defmodule LCRDT.OrSetTest do
   @item_name :apple
 
   setup do
+    LCRDT.Environment.set_auto_allocation(-1)
     LCRDT.Environment.use_crdt(OrSet)
     {:ok, _} = Application.ensure_all_started(:lcrdt)
     on_exit(fn -> Application.stop(:lcrdt) end)

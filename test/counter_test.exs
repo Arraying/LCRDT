@@ -9,9 +9,13 @@ defmodule LCRDT.CounterTest do
   @baz :baz_crdt
 
   setup do
+    LCRDT.Environment.set_auto_allocation(-1)
     LCRDT.Environment.use_crdt(Counter)
     {:ok, _} = Application.ensure_all_started(:lcrdt)
-    on_exit(fn -> Application.stop(:lcrdt) end)
+    on_exit(fn ->
+      Application.stop(:lcrdt)
+      LCRDT.Environment.set_auto_allocation(-1)
+    end)
   end
 
   test "we cant increment without a lease" do
@@ -81,5 +85,32 @@ defmodule LCRDT.CounterTest do
     :timer.sleep(@delay)
     assert Counter.sum(@bar) == 1
     assert Counter.sum(@baz) == 1
+  end
+
+  test "we can automatically allocate to a single node" do
+    # We will allocate 5 leases every time we run out.
+    LCRDT.Environment.set_auto_allocation(5)
+    Counter.request_leases(@foo, 1)
+    assert Counter.inc(@foo) == :inc
+    # At this point, auto-allocation should occur in the background.
+    assert Counter.sum(@foo) == 1
+    # And we're good to increment another few!
+    assert Counter.inc(@foo) == :inc
+    assert Counter.inc(@foo) == :inc
+    assert Counter.sum(@foo) == 3
+  end
+
+  test "we can automatically allocate to multiple nodes" do
+    LCRDT.Environment.set_auto_allocation(5)
+    Counter.request_leases(@foo, 1)
+    Counter.request_leases(@bar, 1)
+    assert Counter.inc(@foo) == :inc
+    assert Counter.inc(@bar) == :inc
+    # Auto-allocation should kick in.
+    assert Counter.inc(@foo) == :inc
+    assert Counter.inc(@bar) == :inc
+    # They'll be 2 each since they have not synced.
+    assert Counter.sum(@foo) == 2
+    assert Counter.sum(@bar) == 2
   end
 end

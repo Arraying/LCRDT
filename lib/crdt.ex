@@ -3,6 +3,7 @@ defmodule LCRDT.CRDT do
   A common abstraction for CvCRDTs.
   This implements state synchronization and syncing.
   """
+alias LCRDT.Environment
 
 
   @callback initial_state() :: term
@@ -207,6 +208,32 @@ defmodule LCRDT.CRDT do
 
       defp get_leases(state), do: Map.get(state.leases, state.name, 0)
 
+      defp potentially_request_more_leases(state, used_function) do
+        amount = Environment.get_auto_allocation()
+        cond do
+          # We don't auto allocate
+          amount == -1 ->
+            state
+          # We have none left, we need to get more.
+          used_function.() >= get_leases(state) ->
+            out(state, "Ran out of leases, getting more")
+            # Do we need to retry?
+            state2 = case LCRDT.Participant.allocate(state.name, amount) do
+              :wrong_node ->
+                raise("Somehow contacted the wrong node, this is a bug")
+              :defer ->
+                %{state | queue: [{:allocate, amount, :nil} | state.queue]}
+              :ok ->
+                # We've managed to start, which means we need to wait again.
+                # If we have many back to back allocations this will get triggered.
+                %{state | waiting: true}
+            end
+          # We're good here, nothing left to do.
+          true ->
+            state
+        end
+      end
+
       defp add_leases(leases, amount, process) do
         Map.update(leases, process, amount, fn x -> x + amount end)
       end
@@ -223,7 +250,7 @@ defmodule LCRDT.CRDT do
         end
         # If we notify, we just return the new state.
         # This is used in the fold function to continue.
-        if notify do
+        if notify and sender != :nil do
           # Only ever used in fold, here we just want the new state.
           GenServer.reply(sender, response)
           state2

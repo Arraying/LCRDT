@@ -12,6 +12,8 @@ defmodule LCRDT.EnvironmentTest do
       # So we don't get in the way of other test suites.
       System.delete_env("CRDT")
       System.delete_env("STOCK")
+      System.delete_env("NOLOG")
+      System.delete_env("AUTO")
     end)
   end
 
