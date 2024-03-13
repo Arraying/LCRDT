@@ -1,7 +1,28 @@
-defmodule Performance do
+defmodule LCRDT.Performance do
   # Function to run tests with different parameter combinations
   def run_tests(test_params_list) do
     Enum.map(test_params_list, &start_test/1)
+  end
+
+  defmodule Timer do
+    use GenServer
+
+    def init(amount) do
+      {:ok, {System.monotonic_time(), amount, :nil}}
+    end
+
+    def handle_call(:wait, from, {start_test_time, amount, _}) do
+      {:noreply, {start_test_time, amount, from}}
+    end
+
+    def handle_cast(:done, {start_test_time, amount, from}) do
+      new_amount = amount - 1
+      if new_amount == 0 do
+        IO.puts("#{(System.monotonic_time() - start_test_time) / 1_000_000 }")
+        GenServer.reply(from, :ok)
+      end
+      {:noreply, {start_test_time, new_amount, from}}
+    end
   end
 
   # Function to start the test with given parameters
@@ -79,10 +100,10 @@ test_params_list = [
   %{num_crdts: 10, num_processes_per_crdt: 20000, num_iterations_per_process: 50000}
 ]
 
-# Run the tests with different parameter combinations
-results = Performance.run_tests(test_params_list)
+# # Run the tests with different parameter combinations
+# results = Performance.run_tests(test_params_list)
 
-# Print the results
-Enum.each(results, fn result ->
-  IO.puts("Total Elapsed Time for the whole test: #{result} milliseconds")
-end)
+# # Print the results
+# Enum.each(results, fn result ->
+#   IO.puts("Total Elapsed Time for the whole test: #{result} milliseconds")
+# end)

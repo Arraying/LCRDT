@@ -372,6 +372,8 @@ defmodule LCRDT.Participant do
   defp is_coordinator(name) when is_atom(name), do: name == Network.coordinator()
   defp is_coordinator(state), do: state.name == Network.coordinator()
 
-  defp out(state, message) when (not is_atom(state)), do: IO.puts("#{__MODULE__}/#{state.name}: #{message}")
+  defp out(state, message) when (not is_atom(state)) do
+    unless LCRDT.Environment.is_silent(), do: IO.puts("#{__MODULE__}/#{state.name}: #{message}")
+  end
   defp out(name, message), do: out(%{name: name}, message)
 end

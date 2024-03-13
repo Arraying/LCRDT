@@ -309,7 +309,9 @@ alias LCRDT.Environment
         LCRDT.Store.write(state.name, %{state | leases: Map.new()})
       end
 
-      defp out(state, message), do: IO.puts("#{__MODULE__}/#{state.name}: #{message}")
+      defp out(state, message) do
+        unless LCRDT.Environment.is_silent(), do: IO.puts("#{__MODULE__}/#{state.name}: #{message}")
+      end
 
     end
   end
