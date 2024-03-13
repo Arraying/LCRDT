@@ -73,7 +73,7 @@ defmodule LCRDT.Environment do
     end
   end
 
-  def set_auto_allocation(value) when is_number(value) and value > 0 do
+  def set_auto_allocation(value) when is_number(value) and (value > 0 or value == -1) do
     System.put_env("AUTO", "#{value}")
   end
 

@@ -39,4 +39,9 @@ defmodule LCRDT.EnvironmentTest do
     Environment.set_auto_allocation(123)
     assert Environment.get_auto_allocation() == 123
   end
+
+  test "disabling auto works" do
+    Environment.set_auto_allocation(-1)
+    assert Environment.get_auto_allocation() == -1
+  end
 end
