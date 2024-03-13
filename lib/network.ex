@@ -11,4 +11,19 @@ defmodule LCRDT.Network do
   #   def vote_commit(), do: :commit
   #   def vote_abort(), do: :abort
   # end
+
+  def reliable_call(pid, request) do
+    # Under some occasions (like gracefully stopping?) even :infinity will disconnect.
+    # This is not great because we want to infinitely block.
+    # So instead, we will just retry until it works out.
+    try do
+      GenServer.call(pid, request, :infinity)
+    catch
+      _ ->
+        # We just sleep and retry later.
+        # It's not perfect, but it'll work.
+        :timer.sleep(100)
+        reliable_call(pid, request)
+    end
+  end
 end

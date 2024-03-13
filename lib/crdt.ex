@@ -21,11 +21,11 @@ defmodule LCRDT.CRDT do
       end
 
       def request_leases(pid, amount) do
-        GenServer.cast(pid, {:request_leases, amount})
+        LCRDT.Network.reliable_call(pid, {:queue, :allocate, amount})
       end
 
-      def deallocate_leases(pid, amount) do
-        GenServer.cast(pid, {:deallocate_leases, amount})
+      def revoke_leases(pid, amount) do
+        LCRDT.Network.reliable_call(pid, {:queue, :deallocate, amount})
       end
 
       # Manually start a sync.
@@ -35,13 +35,13 @@ defmodule LCRDT.CRDT do
 
       # Debug functionality.
       def dump(pid) do
-        GenServer.call(pid, :dump)
+        LCRDT.Network.reliable_call(pid, :dump)
       end
 
-      defp run_operation_blocking(pid, operation, requester_pid) do
+      defp call_blocking(pid, operation) do
         # We run an operation until we receive a response.
         # This will internally be a call.
-        GenServer.call(pid, {:operation, operation, requester_pid}, :infinity)
+        LCRDT.Network.reliable_call(pid, {:queue, :operation, operation})
       end
 
       # This will initialize the state and start auto-syncing.
@@ -67,18 +67,6 @@ defmodule LCRDT.CRDT do
         {:ok, Map.merge(Map.merge(domain, recovered_state), crdt)}
       end
 
-      @impl true
-      def handle_cast({:request_leases, amount}, state) do
-        LCRDT.Participant.allocate(state.name, amount)
-        {:noreply, state}
-      end
-
-      @impl true
-      def handle_cast({:deallocate_leases, amount}, state) do
-        LCRDT.Participant.deallocate(state.name, amount)
-        {:noreply, state}
-      end
-
       # Broadcasts its entire state.
       @impl true
       def handle_cast(:sync, state) do
@@ -99,8 +87,9 @@ defmodule LCRDT.CRDT do
         # We don't actually care what the body is.
         # Since this is 2PC, everyone needs to have prepared so we have nothing to do here.
         state2 = %{state1 | uncommitted_changes: false, waiting: false}
-        save_state(state2)
-        {:noreply, state2}
+        state3 = run_queue(state2)
+        save_state(state3)
+        {:noreply, state3}
       end
 
       @impl true
@@ -113,14 +102,15 @@ defmodule LCRDT.CRDT do
               else
                 state1.leases
               end
-            %{state1 | leases: leases, uncommitted_changes: false, waiting: false}
+            %{state1 | leases: leases, uncommitted_changes: false}
           else
             # We were (one of) the one(s) who aborted.
             # It's not in our state so we don't need to undo it.
-            %{state1 | waiting: false}
+            state1
           end
-        save_state(state2)
-        {:noreply, state2}
+        state3 = run_queue(%{state2 | waiting: false})
+        save_state(state3)
+        {:noreply, state3}
       end
 
       @impl true
@@ -144,20 +134,24 @@ defmodule LCRDT.CRDT do
       end
 
       @impl true
-      def handle_cast({:abort, {:deallocate, amount, process}}, state) do
-        if state.uncommitted_changes do
-          leases =
-            if Map.has_key?(state.leases, process) do
-              Map.update!(state.leases, process, fn x -> x + amount end)
-            else
-              Map.put(state.leases, process, amount)
-            end
-          {:noreply, %{state | leases: leases, uncommitted_changes: false}}
-        else
-          # We were (one of) the one(s) who aborted.
-          # It's not in our state so we don't need to undo it.
-          {:noreply, state}
-        end
+      def handle_cast({:abort, {:deallocate, amount, process}}, state1) do
+        state2 =
+          if state1.uncommitted_changes do
+            leases =
+              if Map.has_key?(state1.leases, process) do
+                Map.update!(state1.leases, process, fn x -> x + amount end)
+              else
+                Map.put(state1.leases, process, amount)
+              end
+            %{state1 | leases: leases, uncommitted_changes: false}
+          else
+            # We were (one of) the one(s) who aborted.
+            # It's not in our state so we don't need to undo it.
+            state1
+          end
+        state3 = run_queue(%{state2 | waiting: false})
+        save_state(state3)
+        {:noreply, state3}
       end
 
       @impl true
@@ -176,6 +170,20 @@ defmodule LCRDT.CRDT do
         {:reply, :ok, %{state | leases: remove_leases(state.leases, amount, process)}}
       end
       # <-- /CRDT communication -->
+
+      @impl true
+      def handle_call({:queue, opcode, op}, sender, state1) do
+        # Can we handle this operation right now?
+        if state1.waiting do
+          state2 = %{state1 | queue: [{opcode, op, sender} | state1.queue]}
+          {:noreply, state2}
+        else
+          # If we're not waiting, we can handle it all the same.
+          # We can reply immediately.
+          {res, state2} = run_operation(opcode, op, sender, state1, false)
+          {:reply, res, state2}
+        end
+      end
 
       # Just returns the state.
       @impl true
@@ -201,6 +209,60 @@ defmodule LCRDT.CRDT do
 
       defp add_leases(leases, amount, process) do
         Map.update(leases, process, amount, fn x -> x + amount end)
+      end
+
+      defp run_operation(opcode, op, sender, state1, notify) do
+        {response, state2} = res = case opcode do
+          :operation ->
+            handle_operation(op, state1)
+            # If we notify, we just return the new state.
+            # This is used in the fold function to continue.
+          lease ->
+            # Op here is an integer for the amount.
+            handle_lease(lease, op, state1.name, sender, state1)
+        end
+        # If we notify, we just return the new state.
+        # This is used in the fold function to continue.
+        if notify do
+          # Only ever used in fold, here we just want the new state.
+          GenServer.reply(sender, response)
+          state2
+        else
+          # Otherwise we need both
+          res
+        end
+      end
+
+      defp handle_lease(opcode, amount, target, sender, state1) do
+        res = case opcode do
+          :allocate ->
+            LCRDT.Participant.allocate(target, amount)
+          :deallocate ->
+            LCRDT.Participant.deallocate(target, amount)
+        end
+        # Do we need to retry?
+        state2 = case res do
+          :wrong_node ->
+            raise("Somehow contacted the wrong node, this is a bug")
+          :defer ->
+            %{state1 | queue: [{opcode, amount, sender} | state1.queue]}
+          :ok ->
+            # We've managed to start, which means we need to wait again.
+            # If we have many back to back allocations this will get triggered.
+            %{state1 | waiting: true}
+        end
+        save_state(state2)
+        {:ok, state2}
+      end
+
+      defp run_queue(state1) do
+        # We must fold right because we need to reverse the list.
+        # This one just has to return
+        state3 = List.foldr(state1.queue, state1, fn {code, op, sender}, state2 ->
+          run_operation(code, op, sender, state2, true)
+        end)
+        # Clear the queue, we went through it.
+        %{state3 | queue: []}
       end
 
       defp remove_leases(leases, amount, process) do

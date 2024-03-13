@@ -9,21 +9,21 @@ defmodule LCRDT.OrSet do
   Whether the set contains an element.
   """
   def contains(pid, unique_id, item) do
-    GenServer.call(pid, {:contains, unique_id, item})
+    call_blocking(pid, {:contains, unique_id, item})
   end
 
 @doc """
   Adds an element to the set if enough leases are available.
   """
   def add(pid, unique_id, item) do
-    GenServer.cast(pid, {:add, unique_id, item})
+    call_blocking(pid, {:add, unique_id, item})
   end
 
   @doc """
   Removes an element from the set.
   """
   def remove(pid, unique_id, item) do
-    GenServer.cast(pid, {:remove, unique_id, item})
+    call_blocking(pid, {:remove, unique_id, item})
   end
 
   def can_deallocate?(state, amount, _process) do
@@ -52,34 +52,36 @@ defmodule LCRDT.OrSet do
     %{state | data: data}
   end
 
-  @impl true
-  def handle_cast({:add, unique_id, item}, state) do
-    if sum_item(state, item) >= get_leases(state) do
-      # TODO: Request more leases or/and return error
-      IO.puts("Lease violation: #{inspect(state)}")
-      {:noreply, state}
-    else
-      key = {unique_id, item}
-      map2 = insert(state.data, key)
-      {add, remove} = Map.fetch!(map2, key)
-      map3 = Map.put(map2, key, {MapSet.put(add, {state.name, :erlang.make_ref()}), remove})
-      {:noreply, %{state | data: map3}}
+  def handle_operation({:add, unique_id, item}, state1) do
+    {exists?, _, state2} = exists?(state1, unique_id, item)
+    cond do
+      # If it exists, we don't do anything.
+      exists? ->
+        {:ok, state2}
+      # If it doesn't exist but we hit maximing leases, we throw an issue.
+      sum_item(state2, item) >= get_leases(state2) ->
+        {:lease_violation, state2}
+      # We add it.
+      true ->
+        key = {unique_id, item}
+        map2 = insert(state2.data, key)
+        {add, remove} = Map.fetch!(map2, key)
+        map3 = Map.put(map2, key, {MapSet.put(add, {state2.name, :erlang.make_ref()}), remove})
+        {:ok, %{state2 | data: map3}}
     end
   end
 
-  @impl true
-  def handle_cast({:remove, unique_id, item}, state) do
+  def handle_operation({:remove, unique_id, item}, state) do
     key = {unique_id, item}
     map2 = insert(state.data, key)
     {add, remove} = Map.fetch!(map2, key)
     map3 = Map.put(map2, key, {add, MapSet.union(add, remove)})
-    {:noreply, %{state | data: map3}}
+    {:ok, %{state | data: map3}}
   end
 
-  @impl true
-  def handle_call({:contains, unique_id, item}, _from, state) do
+  def handle_operation({:contains, unique_id, item}, state) do
     {exists?, _, state2} = exists?(state, unique_id, item)
-    {:reply, exists?, state2}
+    {exists?, state2}
   end
 
   defp insert(map, object), do: Map.put_new(map, object, {MapSet.new(), MapSet.new()})
