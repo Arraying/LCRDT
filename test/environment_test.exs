@@ -29,4 +29,14 @@ defmodule LCRDT.EnvironmentTest do
     Environment.set_stock(19)
     assert Environment.get_stock() == 19
   end
+
+  test "setting silence works" do
+    Environment.set_silent(true)
+    assert Environment.is_silent() == true
+  end
+
+  test "setting auto works" do
+    Environment.set_auto_allocation(123)
+    assert Environment.get_auto_allocation() == 123
+  end
 end
