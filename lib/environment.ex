@@ -77,4 +77,23 @@ defmodule LCRDT.Environment do
     System.put_env("AUTO", "#{value}")
   end
 
+  def get_sync_interval() do
+    default = 10_000
+    case System.fetch_env("SYNC") do
+      {:ok, value} ->
+        case Integer.parse(value) do
+          {i, _} when i > 0 ->
+            i
+          _ ->
+            default
+        end
+      _ ->
+        default
+    end
+  end
+
+  def set_sync_interval(value) when is_number(value) and (value > 0) do
+    System.put_env("SYNC", "#{value}")
+  end
+
 end

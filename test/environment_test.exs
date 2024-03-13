@@ -14,6 +14,7 @@ defmodule LCRDT.EnvironmentTest do
       System.delete_env("STOCK")
       System.delete_env("NOLOG")
       System.delete_env("AUTO")
+      System.delete_env("SYNC")
     end)
   end
 
@@ -45,5 +46,10 @@ defmodule LCRDT.EnvironmentTest do
   test "disabling auto works" do
     Environment.set_auto_allocation(-1)
     assert Environment.get_auto_allocation() == -1
+  end
+
+  test "setting sync works" do
+    Environment.set_sync_interval(19)
+    assert Environment.get_sync_interval() == 19
   end
 end

@@ -14,6 +14,7 @@ defmodule LCRDT.TPCTest do
   @faulty :bar_tpc
 
   setup do
+    LCRDT.Environment.set_sync_interval(1_000_000_000)
     LCRDT.Environment.set_auto_allocation(-1)
     LCRDT.Environment.use_crdt(Counter)
     {:ok, _} = Application.ensure_all_started(:lcrdt)

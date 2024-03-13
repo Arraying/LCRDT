@@ -11,6 +11,8 @@ defmodule LCRDT.OrSetTest do
   @item_name :apple
 
   setup do
+    LCRDT.Environment.set_sync_interval(1_000_000_000)
+    LCRDT.Environment.set_sync_interval(1_000_000_000)
     LCRDT.Environment.set_auto_allocation(-1)
     LCRDT.Environment.use_crdt(OrSet)
     {:ok, _} = Application.ensure_all_started(:lcrdt)

@@ -48,7 +48,7 @@ alias LCRDT.Environment
       # This will initialize the state and start auto-syncing.
       @impl true
       def init(name) do
-        :timer.send_interval(10_000_000, :autosync)
+        :timer.send_interval(LCRDT.Environment.get_sync_interval(), :autosync)
 
         # State priority
         # 1. crdt
