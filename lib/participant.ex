@@ -40,12 +40,12 @@ defmodule LCRDT.Participant do
 
   def allocate(application_pid, lease_amount) do
     # Body = {:allocate, amount, allocater_pid}
-    GenServer.cast(Network.coordinator(), {:start, {:allocate, lease_amount, application_pid}})
+    Network.reliable_call(Network.coordinator(), {:start, {:allocate, lease_amount, application_pid}})
   end
 
   def deallocate(application_pid, lease_amount) do
     # Body = {:deallocate, amount, deallocater_pid}
-    GenServer.cast(Network.coordinator(), {:start, {:deallocate, lease_amount, application_pid}})
+    Network.reliable_call(Network.coordinator(), {:start, {:deallocate, lease_amount, application_pid}})
   end
 
   @impl true
@@ -135,25 +135,16 @@ defmodule LCRDT.Participant do
   end
 
   @impl true
-  def handle_cast({:new_follower, their_pid}, state1) do
-    out(state1, "Discovered follower with PID #{their_pid}")
-    # We only want to add them if they do not exist. If they crashed and restart, they will exist.
-    followers = if Enum.member?(state1.followers, their_pid), do: state1.followers, else: [their_pid | state1.followers]
-    state2 = %{state1 | followers: followers}
-    {:noreply, state2}
-  end
-
-  @impl true
-  def handle_cast({:start, body}, state1) do
+  def handle_call({:start, body}, _from, state1) do
     cond do
       # Edge case: trying to start with non-coordinator.
       not is_coordinator(state1) ->
         out(state1, "ERROR, only the coordinator can handle starts")
-        {:noreply, state1}
+        {:reply, :wrong_node, state1}
       # Edge case: trying to start during a concurrent transaction.
       state1.stage != :idle ->
-        out(state1, "ERROR, starts can only be executed in idle state")
-        {:noreply, state1}
+        out(state1, "Received start in running state, telling initiator to defer")
+        {:reply, :defer, state1}
       # Regular execution.
       true ->
         # We assign this a new transaction ID.
@@ -173,8 +164,17 @@ defmodule LCRDT.Participant do
         if activated(state3.crashpoints, after_prepare_request()) do
           raise("hit after_prepare_request crashpoint")
         end
-        {:noreply, state3}
+        {:reply, :ok, state3}
     end
+  end
+
+  @impl true
+  def handle_cast({:new_follower, their_pid}, state1) do
+    out(state1, "Discovered follower with PID #{their_pid}")
+    # We only want to add them if they do not exist. If they crashed and restart, they will exist.
+    followers = if Enum.member?(state1.followers, their_pid), do: state1.followers, else: [their_pid | state1.followers]
+    state2 = %{state1 | followers: followers}
+    {:noreply, state2}
   end
 
   @impl true

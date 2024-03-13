@@ -7,11 +7,7 @@ defmodule LCRDT.Application do
   use Application
 
   def start(_, _) do
-    crdt = case System.fetch_env("CRDT") do
-      {:ok, "counter"} -> LCRDT.Counter
-      {:ok, "orset"} -> LCRDT.OrSet
-      _ -> LCRDT.Counter
-    end
+    crdt = LCRDT.Environment.get_crdt()
     LCRDT.Logging.clean_slate()
     LCRDT.Store.clean_slate()
     children = Enum.map(LCRDT.Network.all_nodes(), &(make_node(&1, crdt)))

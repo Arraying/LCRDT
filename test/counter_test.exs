@@ -9,91 +9,74 @@ defmodule LCRDT.CounterTest do
   @baz :baz_crdt
 
   setup do
+    LCRDT.Environment.use_crdt(Counter)
     {:ok, _} = Application.ensure_all_started(:lcrdt)
     on_exit(fn -> Application.stop(:lcrdt) end)
   end
 
   test "we cant increment without a lease" do
-    Counter.inc(@foo)
-    :timer.sleep(@delay)
+    assert Counter.inc(@foo) == :lease_violation
     assert Counter.sum(@foo) == 0
   end
 
   test "we cant increment more than the stock" do
-    LCRDT.Participant.allocate(@foo, Counter.total_stock() + 1)
-    :timer.sleep(@delay)
-
-    Counter.inc(@foo)
+    # This will run in the background.
+    Counter.request_leases(@foo, LCRDT.Environment.get_stock() + 1)
+    # This will block until the above call is done:
+    assert Counter.inc(@foo) == :lease_violation
     assert Counter.sum(@foo) == 0
   end
 
   test "we cant decrement below zero" do
     # Decrement twice
-    Counter.dec(@bar)
-    Counter.dec(@bar)
-    :timer.sleep(@delay)
+    assert Counter.dec(@bar) == :lease_violation
+    assert Counter.dec(@bar) == :lease_violation
     assert Counter.sum(@bar) == 0
   end
 
   test "we can increment once per every lease" do
-    LCRDT.Participant.allocate(@foo, 1)
-    :timer.sleep(@delay)
-
-    # Increment twice
-    Counter.inc(@foo)
-    Counter.inc(@foo)
-    :timer.sleep(@delay)
+    Counter.request_leases(@foo, 1)
+    # Increment twice.
+    assert Counter.inc(@foo) == :inc
+    assert Counter.inc(@foo) == :lease_violation
     assert Counter.sum(@foo) == 1
   end
 
   test "decrement reclaims a lease" do
-    LCRDT.Participant.allocate(@foo, 1)
-    :timer.sleep(@delay)
-
-    Counter.inc(@foo)
-    :timer.sleep(@delay)
+    Counter.request_leases(@foo, 1)
+    assert Counter.inc(@foo) == :inc
     assert Counter.sum(@foo) == 1
 
-    Counter.dec(@foo)
-    :timer.sleep(@delay)
+    assert Counter.dec(@foo) == :dec
     assert Counter.sum(@foo) == 0
 
-    Counter.inc(@foo)
-    :timer.sleep(@delay)
+    assert Counter.inc(@foo) == :inc
     assert Counter.sum(@foo) == 1
   end
 
   test "we can increment and decrement" do
-    LCRDT.Participant.allocate(@foo, 5)
-    :timer.sleep(@delay)
-
-    Counter.inc(@foo)
-    Counter.inc(@foo)
-    Counter.dec(@foo)
-    :timer.sleep(@delay)
+    Counter.request_leases(@foo, 5)
+    assert Counter.inc(@foo) == :inc
+    assert Counter.inc(@foo) == :inc
+    assert Counter.dec(@foo) == :dec
     assert Counter.sum(@foo) == 1
   end
 
   test "we can estimate the sum of other counters" do
-    LCRDT.Participant.allocate(@foo, 1)
-    :timer.sleep(@delay)
-    LCRDT.Participant.allocate(@bar, 5)
-    :timer.sleep(@delay)
-
-    Counter.inc(@foo)
-    Counter.inc(@bar)
+    Counter.request_leases(@foo, 1)
+    Counter.request_leases(@bar, 5)
+    assert Counter.inc(@foo) == :inc
+    assert Counter.inc(@bar) == :inc
     Counter.sync(@bar)
     :timer.sleep(@delay)
-    Counter.inc(@bar)
-    Counter.inc(@bar)
+    assert Counter.inc(@bar) == :inc
+    assert Counter.inc(@bar) == :inc
     assert Counter.sum(@foo) == 2
   end
 
   test "we can sync with other counters" do
     LCRDT.Participant.allocate(@foo, 1)
-    :timer.sleep(@delay)
-
-    Counter.inc(@foo)
+    assert Counter.inc(@foo) == :inc
     Counter.sync(@foo)
     :timer.sleep(@delay)
     assert Counter.sum(@bar) == 1
