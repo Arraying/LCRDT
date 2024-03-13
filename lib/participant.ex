@@ -135,15 +135,6 @@ defmodule LCRDT.Participant do
   end
 
   @impl true
-  def handle_cast({:new_follower, their_pid}, state1) do
-    out(state1, "Discovered follower with PID #{their_pid}")
-    # We only want to add them if they do not exist. If they crashed and restart, they will exist.
-    followers = if Enum.member?(state1.followers, their_pid), do: state1.followers, else: [their_pid | state1.followers]
-    state2 = %{state1 | followers: followers}
-    {:noreply, state2}
-  end
-
-  @impl true
   def handle_call({:start, body}, _from, state1) do
     cond do
       # Edge case: trying to start with non-coordinator.
@@ -175,6 +166,15 @@ defmodule LCRDT.Participant do
         end
         {:reply, :ok, state3}
     end
+  end
+
+  @impl true
+  def handle_cast({:new_follower, their_pid}, state1) do
+    out(state1, "Discovered follower with PID #{their_pid}")
+    # We only want to add them if they do not exist. If they crashed and restart, they will exist.
+    followers = if Enum.member?(state1.followers, their_pid), do: state1.followers, else: [their_pid | state1.followers]
+    state2 = %{state1 | followers: followers}
+    {:noreply, state2}
   end
 
   @impl true
