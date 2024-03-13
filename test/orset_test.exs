@@ -14,7 +14,10 @@ defmodule LCRDT.OrSetTest do
     LCRDT.Environment.set_auto_allocation(-1)
     LCRDT.Environment.use_crdt(OrSet)
     {:ok, _} = Application.ensure_all_started(:lcrdt)
-    on_exit(fn -> Application.stop(:lcrdt) end)
+    on_exit(fn ->
+      Application.stop(:lcrdt)
+      LCRDT.Environment.set_auto_allocation(-1)
+    end)
   end
 
   test "we cant increment without a lease" do
@@ -137,6 +140,34 @@ defmodule LCRDT.OrSetTest do
     :timer.sleep(@delay)
     assert OrSet.contains(@foo, @id, @item_name) == true
     assert OrSet.contains(@bar, @id, @item_name) == true
+  end
+
+  test "we can automatically allocate to a single node" do
+    # We will allocate 5 leases every time we run out.
+    LCRDT.Environment.set_auto_allocation(5)
+    OrSet.request_leases(@foo, 1)
+    assert OrSet.add(@foo, @id, @item_name) == :ok
+    # At this point, auto-allocation should occur in the background.
+    assert OrSet.contains(@foo, @id, @item_name) == true
+    # And we're good to increment another few!
+    assert OrSet.add(@foo, 19, @item_name) == :ok
+    assert OrSet.add(@foo, 21, @item_name) == :ok
+    assert OrSet.contains(@foo, 19, @item_name) == true
+  end
+
+  test "we can automatically allocate to multiple nodes" do
+    LCRDT.Environment.set_auto_allocation(5)
+    OrSet.request_leases(@foo, 1)
+    OrSet.request_leases(@bar, 1)
+    item1 = :salt_and_vinegar
+    item2 = :cheese_and_onion
+    assert OrSet.add(@foo, @id, item1) == :ok
+    assert OrSet.add(@bar, @id, item2) == :ok
+    # Auto-allocation should kick in.
+    assert OrSet.add(@foo, 19, item1) == :ok
+    assert OrSet.add(@bar, 19, item2) == :ok
+    assert OrSet.contains(@foo, 19, item1) == true
+    assert OrSet.contains(@bar, 19, item2) == true
   end
 
 end

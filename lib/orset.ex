@@ -67,7 +67,9 @@ defmodule LCRDT.OrSet do
         map2 = insert(state2.data, key)
         {add, remove} = Map.fetch!(map2, key)
         map3 = Map.put(map2, key, {MapSet.put(add, {state2.name, :erlang.make_ref()}), remove})
-        {:ok, %{state2 | data: map3}}
+        state3 = %{state2 | data: map3}
+        state4 = potentially_request_more_leases(state3, fn -> sum_item(state3, item) end)
+        {:ok, state4}
     end
   end
 
