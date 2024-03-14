@@ -2,6 +2,13 @@
 
 First, launch the shell. This will bind three CvRDTs under `:foo_crdt`, `:bar_crdt` and `:baz_crdt`.
 
+## Contributions
+
+| Member | Contributions |
+| - | - |
+| Eugen Lucchiari Hartz | Theoretical conceptualization, 2PC, benchmarking, report |
+| Samuel Horáček | Theoretical conceptualization, 2PC, report |
+| Paul Hübner | Theoretical conceptualization, CRDTs, lease allocation scheduling/recovery, report |
 
 ## Testing
 
