@@ -6,7 +6,7 @@ defmodule LCRDT.TPCTest do
   import LCRDT.Injections.Crash
   doctest LCRDT.Participant
 
-  @delay 500
+  @delay 200
   @foo :foo_crdt
   @bar :bar_crdt
   @baz :baz_crdt
@@ -23,6 +23,10 @@ defmodule LCRDT.TPCTest do
 
   test "commit, no crashes" do
     Counter.request_leases(@foo, 1)
+    # Baz at this point isn't aware of the lease transaction as it isn't concerned by it.
+    # So, doing foo_leases won't wait for a pending transaction.
+    # That's why we need to manually sleep beyond the time to ensure this is reflected.
+    :timer.sleep(@delay)
     assert foo_leases(@baz) == 1
   end
 
@@ -44,6 +48,8 @@ defmodule LCRDT.TPCTest do
   test "commit, follower crashes before sending vote" do
     inject(@faulty, during_prepare(), neutral())
     Counter.request_leases(@foo, 1)
+    # We still don't know about foo's request so we sleep here too.
+    :timer.sleep(@delay)
     # In this scenario, we should commit.
     assert foo_leases(@baz) == 1
   end
@@ -110,30 +116,26 @@ defmodule LCRDT.TPCTest do
   end
 
   test "deallocate, follower crashes after sending vote and another transaction started" do
+    # !!! MIGHT BE FLAKY !!!
     # Initial allocation
     Counter.request_leases(@foo, 2)
     # Before prepare, we start another transaction
     inject(@faulty, before_prepare(), neutral())
-    # Here we just go to the participant directly as we would otherwise block.
-    # We want this to happen asynchronously!
-    Participant.deallocate(@foo, 1)
-    assert foo_leases(@foo) == 2
+    Counter.revoke_leases(@foo, 1)
+    # The first transaction should(!) abort due to crashed follower, so the second is not possible, so we have 0.
+    assert foo_leases(@foo) == 0
   end
 
   test "commit, coordinator crashes after start" do
     inject(@coordinator, before_prepare_request(), neutral())
-    # Since starting happens sync (we need to know when to re-schedule starts)
-    # when we raise this will fail the call. To get around this we just spawn the
-    # transaction in a temporary process that is meant to fail!
-    spawn(fn -> Counter.request_leases(@foo, 1) end)
+    Counter.request_leases(@foo, 1)
     :timer.sleep(@delay)
     assert foo_leases(@baz) == 1
   end
 
   test "abort, coordinator crashes after sending prepare requests (never receives)" do
     inject(@coordinator, after_prepare_request(), neutral())
-    # Same logic here, we need a new process to start it.
-    spawn(fn ->  Counter.request_leases(@foo, 1) end)
+    Counter.request_leases(@foo, 1)
     :timer.sleep(@delay)
     # At this point, it has not received its own prepare.
     # The log cannot show a commit so we are cautious and abort.
@@ -144,12 +146,14 @@ defmodule LCRDT.TPCTest do
     inject(@coordinator, after_prepare(), neutral())
     Counter.request_leases(@foo, 1)
     # At this point we know that we OK'd, so when we recover we should hopefully be able to commit.
+    :timer.sleep(@delay)
     assert foo_leases(@baz) == 1
   end
 
   test "commit, coordinator crashes before sending out finalize" do
     inject(@coordinator, before_finalize(), neutral())
     Counter.request_leases(@foo, 1)
+    :timer.sleep(@delay)
     assert foo_leases(@foo) == 1
     assert foo_leases(@bar) == 1
     assert foo_leases(@baz) == 1
@@ -158,6 +162,7 @@ defmodule LCRDT.TPCTest do
   test "abort, coordinator crashes before sending out finalize" do
     inject(@coordinator, before_finalize(), neutral())
     Counter.request_leases(@foo, 123456)
+    :timer.sleep(@delay)
     assert foo_leases(@foo) == 0
     assert foo_leases(@bar) == 0
     assert foo_leases(@baz) == 0

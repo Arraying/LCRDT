@@ -80,7 +80,7 @@ defmodule LCRDT.CounterTest do
   end
 
   test "we can sync with other counters" do
-    LCRDT.Participant.allocate(@foo, 1)
+    Counter.request_leases(@foo, 1)
     assert Counter.inc(@foo) == :inc
     Counter.sync(@foo)
     :timer.sleep(@delay)

@@ -2,6 +2,8 @@ defmodule LCRDT.Benchmark do
   use ExUnit.Case
   alias LCRDT.Counter
 
+  @moduletag timeout: :infinity
+
   setup do
     LCRDT.Environment.set_sync_interval(20_000)
     LCRDT.Environment.set_stock(10_000_000)
@@ -15,44 +17,55 @@ defmodule LCRDT.Benchmark do
   end
 
   # test "Ist mir scheiss egal, wir testen nur counter" do
-
-
   #   LCRDT.Environment.set_auto_allocation(-1)
-  #   Enum.each(get_nodes(), fn crdts ->
-  #     Counter.request_leases(crdts, 1_500_000)
-  #   end)
-
-  #   :timer.sleep(5000)
-  #   run_test(100, 1000)
+  #   run_test(1_500_00, 100, 1000)
   # end
 
-  test "Wir testen nur counter 2" do
+  # test "Wir testen nur counter 2" do
+  #   LCRDT.Environment.set_auto_allocation(2000)
+  #   run_test(2000, 100, 1000)
+  # end
 
-
-    LCRDT.Environment.set_auto_allocation(2000)
-
-    run_test(100, 1000)
+  test "Tja ganz schön langsam" do
+    LCRDT.Environment.set_auto_allocation(10)
+    run_test(1, 100, 10)
   end
 
-  defp run_test(num_workers, num_requests_per_worker) do
+  defp run_test(initial_allocation, num_workers, num_requests_per_worker) do
     num_crdts = length(LCRDT.Network.all_nodes())
     total = num_crdts * num_workers
     {:ok, _ } = GenServer.start_link(LCRDT.Performance.Timer, total, name: :sam)
-
     Enum.each(get_nodes(), fn crdts ->
-
+      Counter.request_leases(crdts, initial_allocation)
+    end)
+    Enum.each(get_nodes(), fn crdts ->
       Enum.each(1..num_workers, fn _ ->
         spawn(fn -> worker(crdts, num_requests_per_worker) end)
       end)
     end)
-    GenServer.call(:sam, :wait, :infinity)
+    {time, viols} = GenServer.call(:sam, :wait, :infinity)
+    IO.puts("Stats for #{num_workers} @ #{num_requests_per_worker}")
+    IO.puts("Total time (ms): #{time}")
+    IO.puts("Total lease violations: #{viols}")
   end
 
   defp worker(crdts, n) do
-    Enum.each(1..n, fn _ ->
-      :inc = Counter.inc(crdts)
-    end)
-    GenServer.cast(:sam, :done)
+    # We also want to count how many lease violations we hit.
+    viols = crawl(crdts, n, 0)
+    GenServer.cast(:sam, {:done, viols})
+  end
+
+  defp crawl(target, left, viols) do
+    unless left == 0 do
+      case Counter.inc(target) do
+        :inc ->
+          crawl(target, left - 1, viols)
+        :lease_violation ->
+          crawl(target, left, viols + 1)
+      end
+    else
+      viols
+    end
   end
 
   defp get_nodes do
