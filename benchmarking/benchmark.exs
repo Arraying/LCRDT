@@ -16,25 +16,34 @@ defmodule LCRDT.Benchmark do
     end)
   end
 
-  # test "Ist mir scheiss egal, wir testen nur counter" do
-  #   LCRDT.Environment.set_auto_allocation(-1)
-  #   run_test(1_500_00, 100, 1000)
-  # end
-
-  # test "Wir testen nur counter 2" do
-  #   LCRDT.Environment.set_auto_allocation(2000)
-  #   run_test(2000, 100, 1000)
-  # end
-
-  # test "Tja ganz schön langsam" do
-  #   LCRDT.Environment.set_auto_allocation(10)
-  #   run_test(1, 100, 10)
-  # end
-
-  test "Langsam mit mehr delay" do
-    LCRDT.Environment.set_auto_allocation(10)
+  test "1 alloc" do
     lag_nodes()
+    LCRDT.Environment.set_auto_allocation(1)
     run_test(1, 100, 10)
+  end
+
+  test "10 alloc" do
+    lag_nodes()
+    LCRDT.Environment.set_auto_allocation(10)
+    run_test(10, 100, 10)
+  end
+
+  test "100 alloc" do
+    lag_nodes()
+    LCRDT.Environment.set_auto_allocation(100)
+    run_test(100, 100, 10)
+  end
+
+  test "500 alloc" do
+    lag_nodes()
+    LCRDT.Environment.set_auto_allocation(500)
+    run_test(500, 100, 10)
+  end
+
+  test "1000 alloc" do
+    lag_nodes()
+    LCRDT.Environment.set_auto_allocation(1000)
+    run_test(1000, 100, 10)
   end
 
   defp run_test(initial_allocation, num_workers, num_requests_per_worker) do
@@ -50,7 +59,7 @@ defmodule LCRDT.Benchmark do
       end)
     end)
     {time, viols} = GenServer.call(:sam, :wait, :infinity)
-    IO.puts("Stats for #{num_workers} @ #{num_requests_per_worker}")
+    IO.puts("Stats for #{initial_allocation} @ #{num_workers} @ #{num_requests_per_worker}")
     IO.puts("Total time (ms): #{time}")
     IO.puts("Total lease violations: #{viols}")
   end
