@@ -80,7 +80,7 @@ defmodule LCRDT.CounterTest do
   end
 
   test "we can sync with other counters" do
-    LCRDT.Participant.allocate(@foo, 1)
+    Counter.request_leases(@foo, 1)
     assert Counter.inc(@foo) == :inc
     Counter.sync(@foo)
     :timer.sleep(@delay)
@@ -113,5 +113,11 @@ defmodule LCRDT.CounterTest do
     # They'll be 2 each since they have not synced.
     assert Counter.sum(@foo) == 2
     assert Counter.sum(@bar) == 2
+  end
+
+  test "operations queue in the correct order" do
+    LCRDT.Counter.request_leases(@foo, 2)
+    assert Counter.inc(@foo) == :inc
+    assert Counter.dec(@foo) == :dec
   end
 end

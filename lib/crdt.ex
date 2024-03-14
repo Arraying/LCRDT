@@ -84,10 +84,10 @@ alias LCRDT.Environment
 
       # <-- CRDT communication -->
       @impl true
-      def handle_cast({:commit, _body}, state1) do
+      def handle_cast({:commit, {_, _, process}}, state1) do
         # We don't actually care what the body is.
         # Since this is 2PC, everyone needs to have prepared so we have nothing to do here.
-        state2 = %{state1 | uncommitted_changes: false, waiting: false}
+        state2 = %{state1 | uncommitted_changes: false, waiting: should_we_wait(state1, process)}
         state3 = run_queue(state2)
         save_state(state3)
         {:noreply, state3}
@@ -109,7 +109,7 @@ alias LCRDT.Environment
             # It's not in our state so we don't need to undo it.
             state1
           end
-        state3 = run_queue(%{state2 | waiting: false})
+        state3 = run_queue(%{state2 | waiting: should_we_wait(state1, process)})
         save_state(state3)
         {:noreply, state3}
       end
@@ -123,9 +123,8 @@ alias LCRDT.Environment
           else
             {:ok, %{state1 | leases: add_leases(state1.leases, amount, process), uncommitted_changes: true}}
           end
-        state3 = %{state2 | waiting: true}
-        save_state(state3)
-        {:reply, res, state3}
+        save_state(state2)
+        {:reply, res, state2}
       end
 
       @impl true
@@ -150,7 +149,7 @@ alias LCRDT.Environment
             # It's not in our state so we don't need to undo it.
             state1
           end
-        state3 = run_queue(%{state2 | waiting: false})
+        state3 = run_queue(%{state2 | waiting: should_we_wait(state1, process)})
         save_state(state3)
         {:noreply, state3}
       end
@@ -159,7 +158,9 @@ alias LCRDT.Environment
       def handle_call({:prepare, {:deallocate, amount, process} = body}, _from, state) do
         out(state, "Preparing to deallocate #{inspect(body)}")
         if can_deallocate?(state, amount, process) do
-          {:reply, :ok, %{state | leases: remove_leases(state.leases, amount, process), uncommitted_changes: true}}
+          state2 = %{state | leases: remove_leases(state.leases, amount, process), uncommitted_changes: true}
+          save_state(state2)
+          {:reply, :ok, state2}
         else
           {:reply, :abort, state}
         end
@@ -176,7 +177,7 @@ alias LCRDT.Environment
       def handle_call({:queue, opcode, op}, sender, state1) do
         # Can we handle this operation right now?
         if state1.waiting do
-          state2 = %{state1 | queue: [{opcode, op, sender} | state1.queue]}
+          state2 = %{state1 | queue: state1.queue ++ [{opcode, op, sender}]}
           {:noreply, state2}
         else
           # If we're not waiting, we can handle it all the same.
@@ -216,18 +217,10 @@ alias LCRDT.Environment
             state
           # We have none left, we need to get more.
           used_function.() >= get_leases(state) ->
-            out(state, "Ran out of leases, getting more")
-            # Do we need to retry?
-            state2 = case LCRDT.Participant.allocate(state.name, amount) do
-              :wrong_node ->
-                raise("Somehow contacted the wrong node, this is a bug")
-              :defer ->
-                %{state | queue: [{:allocate, amount, :nil} | state.queue]}
-              :ok ->
-                # We've managed to start, which means we need to wait again.
-                # If we have many back to back allocations this will get triggered.
-                %{state | waiting: true}
-            end
+            LCRDT.Participant.allocate(state.name, amount)
+            state2 = %{state | waiting: true}
+            save_state(state2)
+            state2
           # We're good here, nothing left to do.
           true ->
             state
@@ -239,7 +232,7 @@ alias LCRDT.Environment
       end
 
       defp run_operation(opcode, op, sender, state1, notify) do
-        {response, state2} = res = case opcode do
+        {response, _} = res = case opcode do
           :operation ->
             handle_operation(op, state1)
             # If we notify, we just return the new state.
@@ -253,11 +246,8 @@ alias LCRDT.Environment
         if notify and sender != :nil do
           # Only ever used in fold, here we just want the new state.
           GenServer.reply(sender, response)
-          state2
-        else
-          # Otherwise we need both
-          res
         end
+        res
       end
 
       defp handle_lease(opcode, amount, target, sender, state1) do
@@ -267,29 +257,36 @@ alias LCRDT.Environment
           :deallocate ->
             LCRDT.Participant.deallocate(target, amount)
         end
-        # Do we need to retry?
-        state2 = case res do
-          :wrong_node ->
-            raise("Somehow contacted the wrong node, this is a bug")
-          :defer ->
-            %{state1 | queue: [{opcode, amount, sender} | state1.queue]}
-          :ok ->
-            # We've managed to start, which means we need to wait again.
-            # If we have many back to back allocations this will get triggered.
-            %{state1 | waiting: true}
-        end
+        state2 = %{state1 | waiting: true}
         save_state(state2)
         {:ok, state2}
       end
 
       defp run_queue(state1) do
-        # We must fold right because we need to reverse the list.
-        # This one just has to return
-        state3 = List.foldr(state1.queue, state1, fn {code, op, sender}, state2 ->
-          run_operation(code, op, sender, state2, true)
-        end)
-        # Clear the queue, we went through it.
-        %{state3 | queue: []}
+        # If we're still waiting, we do not yet run the queue.
+        unless state1.waiting do
+          run_queue_worker(state1)
+        else
+          # We're still waiting, we don't do anything.
+          state1
+        end
+
+      end
+
+      defp run_queue_worker(state1) do
+        case state1.queue do
+          # Base case, we return.
+          [] ->
+            state1
+          # If we're waiting we also return.
+          _ when state1.waiting ->
+            state1
+          # Otherwise we work the queue until we have to wait.
+          [{code, op, sender} | next] ->
+            {_, state2} = run_operation(code, op, sender, state1, true)
+            state3 = %{state2 | queue: next}
+            run_queue_worker(state3)
+        end
       end
 
       defp remove_leases(leases, amount, process) do
@@ -309,7 +306,22 @@ alias LCRDT.Environment
         LCRDT.Store.write(state.name, %{state | leases: Map.new()})
       end
 
-      defp out(state, message), do: IO.puts("#{__MODULE__}/#{state.name}: #{message}")
+      defp should_we_wait(state, process_for) do
+        res = if state.waiting do
+          # If we are currently waiting, then we divide into two cases:
+          # 1: We are waiting for us, in which case we can stop waiting.
+          # 2: We are not waiting for us, in which case we retain our
+          if process_for == state.name, do: false, else: true
+        else
+          # If we are not waiting, we continue to not wait.
+          false
+        end
+        res
+      end
+
+      defp out(state, message) do
+        unless LCRDT.Environment.is_silent(), do: IO.puts("#{__MODULE__}/#{state.name}: #{message}")
+      end
 
     end
   end
