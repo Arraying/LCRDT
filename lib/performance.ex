@@ -1,8 +1,4 @@
 defmodule LCRDT.Performance do
-  # Function to run tests with different parameter combinations
-  def run_tests(test_params_list) do
-    Enum.map(test_params_list, &start_test/1)
-  end
 
   defmodule Timer do
     use GenServer
