@@ -12,6 +12,9 @@ defmodule LCRDT.EnvironmentTest do
       # So we don't get in the way of other test suites.
       System.delete_env("CRDT")
       System.delete_env("STOCK")
+      System.delete_env("NOLOG")
+      System.delete_env("AUTO")
+      System.delete_env("SYNC")
     end)
   end
 
@@ -28,5 +31,25 @@ defmodule LCRDT.EnvironmentTest do
   test "setting stock works" do
     Environment.set_stock(19)
     assert Environment.get_stock() == 19
+  end
+
+  test "setting silence works" do
+    Environment.set_silent(true)
+    assert Environment.is_silent() == true
+  end
+
+  test "setting auto works" do
+    Environment.set_auto_allocation(123)
+    assert Environment.get_auto_allocation() == 123
+  end
+
+  test "disabling auto works" do
+    Environment.set_auto_allocation(-1)
+    assert Environment.get_auto_allocation() == -1
+  end
+
+  test "setting sync works" do
+    Environment.set_sync_interval(19)
+    assert Environment.get_sync_interval() == 19
   end
 end

@@ -49,18 +49,18 @@ defmodule LCRDT.Counter do
     %{state | up: fun.(other_state.up, state.up), down: fun.(other_state.down, state.down)}
   end
 
-  def handle_operation(:inc, state) do
-    if get_leases(state) - get_counter(state, state.name) <= 0 do
-      # TODO: Request more leases or/and return error
-      {:lease_violation, state}
+  def handle_operation(:inc, state1) do
+    if get_leases(state1) - get_counter(state1, state1.name) <= 0 do
+      {:lease_violation, state1}
     else
-      {:inc, %{state | up: Map.update(state.up, state.name, 1, &(&1 + 1))}}
+      state2 = %{state1 | up: Map.update(state1.up, state1.name, 1, &(&1 + 1))}
+      state3 = potentially_request_more_leases(state2, fn -> get_counter(state2, state2.name) end)
+      {:inc, state3}
     end
   end
 
   def handle_operation(:dec, state) do
     if sum_counter(state) <= 0 do
-      # TODO: return error, can't dec anymore
       {:lease_violation, state}
     else
       {:dec, %{state | down: Map.update(state.down, state.name, 1, &(&1 + 1))}}

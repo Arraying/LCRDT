@@ -31,7 +31,7 @@ defmodule LCRDT.Environment do
     case System.fetch_env("STOCK") do
       {:ok, value} ->
         case Integer.parse(value) do
-          {i, _} ->
+          {i, _} when i > 0 ->
             i
           _ ->
             default
@@ -43,6 +43,57 @@ defmodule LCRDT.Environment do
 
   def set_stock(stock) when is_integer(stock) and stock > 0 do
     System.put_env("STOCK", Integer.to_string(stock))
+  end
+
+  def is_silent() do
+    case System.fetch_env("NOLOG") do
+      {:ok, value} ->
+        String.downcase(value) == "true"
+      _ ->
+        false
+    end
+  end
+
+  def set_silent(value) when is_boolean(value) do
+    System.put_env("NOLOG", "#{value}")
+  end
+
+  def get_auto_allocation() do
+    default = -1
+    case System.fetch_env("AUTO") do
+      {:ok, value} ->
+        case Integer.parse(value) do
+          {i, _} when i > 0 ->
+            i
+          _ ->
+            default
+        end
+      _ ->
+        default
+    end
+  end
+
+  def set_auto_allocation(value) when is_number(value) and (value > 0 or value == -1) do
+    System.put_env("AUTO", "#{value}")
+  end
+
+  def get_sync_interval() do
+    default = 10_000
+    case System.fetch_env("SYNC") do
+      {:ok, value} ->
+        case Integer.parse(value) do
+          {i, _} when i > 0 ->
+            i
+          _ ->
+            default
+        end
+      _ ->
+        default
+    end
+  end
+
+  def set_sync_interval(value) when is_number(value) and (value > 0) do
+    System.put_env("SYNC", "#{value}")
   end
 
 end

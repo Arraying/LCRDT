@@ -4,6 +4,7 @@ defmodule LCRDT.Participant do
   alias LCRDT.Store
   import LCRDT.Injections
   import LCRDT.Injections.Crash
+  import LCRDT.Injections.Lag
   use GenServer
 
   # TODO: Defer follower recovery if coordinator is recovering.
@@ -26,6 +27,7 @@ defmodule LCRDT.Participant do
       :tid,
       :body,
       :body_previous,
+      queue: [],
       stage: :idle,
       votes: Map.new(),
       crashpoints: 0,
@@ -40,12 +42,12 @@ defmodule LCRDT.Participant do
 
   def allocate(application_pid, lease_amount) do
     # Body = {:allocate, amount, allocater_pid}
-    Network.reliable_call(Network.coordinator(), {:start, {:allocate, lease_amount, application_pid}})
+    GenServer.cast(Network.coordinator(), {:start, {:allocate, lease_amount, application_pid}})
   end
 
   def deallocate(application_pid, lease_amount) do
     # Body = {:deallocate, amount, deallocater_pid}
-    Network.reliable_call(Network.coordinator(), {:start, {:deallocate, lease_amount, application_pid}})
+    GenServer.cast(Network.coordinator(), {:start, {:deallocate, lease_amount, application_pid}})
   end
 
   @impl true
@@ -106,7 +108,8 @@ defmodule LCRDT.Participant do
             # We re-send out our responses.
             Enum.each(state1.followers, fn follower_pid ->
               unless follower_pid == name do
-                resend_last_outcome(state1, follower_pid, state1.tid)
+                # Note that here we use the BODY not the PREVIOUS BODY because they have not switched yet.
+                resend_last_outcome(state1, follower_pid, state1.tid, state1.body)
               end
             end)
             state1
@@ -135,16 +138,16 @@ defmodule LCRDT.Participant do
   end
 
   @impl true
-  def handle_call({:start, body}, _from, state1) do
+  def handle_cast({:start, body} = req, state1) do
     cond do
       # Edge case: trying to start with non-coordinator.
       not is_coordinator(state1) ->
         out(state1, "ERROR, only the coordinator can handle starts")
-        {:reply, :wrong_node, state1}
+        {:noreply, state1}
       # Edge case: trying to start during a concurrent transaction.
       state1.stage != :idle ->
-        out(state1, "Received start in running state, telling initiator to defer")
-        {:reply, :defer, state1}
+        out(state1, "Received start in running state, queueing up")
+        {:noreply, %{state1 | queue: state1.queue ++ [req]}}
       # Regular execution.
       true ->
         # We assign this a new transaction ID.
@@ -164,7 +167,7 @@ defmodule LCRDT.Participant do
         if activated(state3.crashpoints, after_prepare_request()) do
           raise("hit after_prepare_request crashpoint")
         end
-        {:reply, :ok, state3}
+        {:noreply, state3}
     end
   end
 
@@ -215,7 +218,7 @@ defmodule LCRDT.Participant do
       # If not, it means that this is a process trying to catch up and we can do so.
       state1.stage == :idle ->
         # We need to re-send the last outcome to get them up to speed.
-        resend_last_outcome(state1, vote_caster, tid)
+        resend_last_outcome(state1, vote_caster, tid, state1.body_previous)
         # We continue.
         {:noreply, state1}
       # Next we check if we received a vote for this round.
@@ -224,7 +227,7 @@ defmodule LCRDT.Participant do
       tid != state1.tid ->
         # They will re-send this vote, but the TID will be different.
         # In this case, we need to re-send the last outcome.
-        resend_last_outcome(state1, vote_caster, tid)
+        resend_last_outcome(state1, vote_caster, tid, state1.body_previous)
         # We also need to get them up to speed on the decision we are making right now.
         # Sending it in this order requires FIFO links but we have these in Elixir.
         resend_last_prepare_request(state1, vote_caster)
@@ -302,6 +305,9 @@ defmodule LCRDT.Participant do
       if activated(state3.crashpoints, before_finalize()) do
         raise("hit before_finalize crashpoint")
       end
+      if activated(state3.lagpoints, finalize()) do
+        :timer.sleep(:rand.uniform(10))
+      end
       # Broadcast the outcome to all followers.
       Enum.each(state3.followers, fn follower_pid ->
         unless follower_pid == state3.name do
@@ -314,7 +320,17 @@ defmodule LCRDT.Participant do
       out(state3, "Resetting the state")
       state4 = %{state3 | tid: nil, body: nil, body_previous: state3.body, stage: :idle, votes: Map.new()}
       snapshot_coordinator(state4)
-      state4
+      # Go through queue.
+      case state4.queue do
+        [] ->
+          state4
+        [req | rest] ->
+          # Tell itself to restart.
+          state5 = %{state4 | queue: rest}
+          snapshot_coordinator(state5)
+          GenServer.cast(Network.coordinator(), req)
+          state5
+      end
     else
       # Noop.
       state2
@@ -345,13 +361,13 @@ defmodule LCRDT.Participant do
     Logging.run(logs, application_pid)
   end
 
-  defp resend_last_outcome(state, syncing_pid, last_tid) do
+  defp resend_last_outcome(state, syncing_pid, last_tid, which_body) do
     case Logging.find_outcome(state.logs, last_tid) do
       :not_found ->
         out(state, "ERROR, could not find last outcome of a crashed process, this is a bug")
       {:found, outcome} ->
         out(state, "Sending last outcome to #{syncing_pid}")
-        GenServer.cast(syncing_pid, {:finalize, last_tid, outcome, state.body_previous})
+        GenServer.cast(syncing_pid, {:finalize, last_tid, outcome, which_body})
     end
   end
 
@@ -372,6 +388,8 @@ defmodule LCRDT.Participant do
   defp is_coordinator(name) when is_atom(name), do: name == Network.coordinator()
   defp is_coordinator(state), do: state.name == Network.coordinator()
 
-  defp out(state, message) when (not is_atom(state)), do: IO.puts("#{__MODULE__}/#{state.name}: #{message}")
+  defp out(state, message) when (not is_atom(state)) do
+    unless LCRDT.Environment.is_silent(), do: IO.puts("#{__MODULE__}/#{state.name}: #{message}")
+  end
   defp out(name, message), do: out(%{name: name}, message)
 end
