@@ -114,4 +114,10 @@ defmodule LCRDT.CounterTest do
     assert Counter.sum(@foo) == 2
     assert Counter.sum(@bar) == 2
   end
+
+  test "operations queue in the correct order" do
+    LCRDT.Counter.request_leases(@foo, 2)
+    assert Counter.inc(@foo) == :inc
+    assert Counter.dec(@foo) == :dec
+  end
 end

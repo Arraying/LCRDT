@@ -128,14 +128,14 @@ defmodule LCRDT.TPCTest do
 
   test "commit, coordinator crashes after start" do
     inject(@coordinator, before_prepare_request(), neutral())
-    Counter.request_leases(@foo, 1)
+    spawn(fn -> Counter.request_leases(@foo, 1) end)
     :timer.sleep(@delay)
     assert foo_leases(@baz) == 1
   end
 
   test "abort, coordinator crashes after sending prepare requests (never receives)" do
     inject(@coordinator, after_prepare_request(), neutral())
-    Counter.request_leases(@foo, 1)
+    spawn(fn -> Counter.request_leases(@foo, 1) end)
     :timer.sleep(@delay)
     # At this point, it has not received its own prepare.
     # The log cannot show a commit so we are cautious and abort.

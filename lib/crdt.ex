@@ -177,7 +177,7 @@ alias LCRDT.Environment
       def handle_call({:queue, opcode, op}, sender, state1) do
         # Can we handle this operation right now?
         if state1.waiting do
-          state2 = %{state1 | queue: [{opcode, op, sender} | state1.queue]}
+          state2 = %{state1 | queue: state1.queue ++ [{opcode, op, sender}]}
           {:noreply, state2}
         else
           # If we're not waiting, we can handle it all the same.
@@ -265,19 +265,28 @@ alias LCRDT.Environment
       defp run_queue(state1) do
         # If we're still waiting, we do not yet run the queue.
         unless state1.waiting do
-          # We must fold right because we need to reverse the list.
-          # This one just has to return
-          state3 = List.foldr(state1.queue, state1, fn {code, op, sender}, state2 ->
-            {_, state3} = run_operation(code, op, sender, state2, true)
-            state3
-          end)
-          # Clear the queue, we went through it.
-          %{state3 | queue: []}
+          run_queue_worker(state1)
         else
           # We're still waiting, we don't do anything.
           state1
         end
 
+      end
+
+      defp run_queue_worker(state1) do
+        case state1.queue do
+          # Base case, we return.
+          [] ->
+            state1
+          # If we're waiting we also return.
+          _ when state1.waiting ->
+            state1
+          # Otherwise we work the queue until we have to wait.
+          [{code, op, sender} | next] ->
+            {_, state2} = run_operation(code, op, sender, state1, true)
+            state3 = %{state2 | queue: next}
+            run_queue_worker(state3)
+        end
       end
 
       defp remove_leases(leases, amount, process) do
