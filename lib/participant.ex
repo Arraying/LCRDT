@@ -4,6 +4,7 @@ defmodule LCRDT.Participant do
   alias LCRDT.Store
   import LCRDT.Injections
   import LCRDT.Injections.Crash
+  import LCRDT.Injections.Lag
   use GenServer
 
   # TODO: Defer follower recovery if coordinator is recovering.
@@ -303,6 +304,9 @@ defmodule LCRDT.Participant do
       out(state3, "Finalized own state")
       if activated(state3.crashpoints, before_finalize()) do
         raise("hit before_finalize crashpoint")
+      end
+      if activated(state3.lagpoints, finalize()) do
+        :timer.sleep(:rand.uniform(10))
       end
       # Broadcast the outcome to all followers.
       Enum.each(state3.followers, fn follower_pid ->

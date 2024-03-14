@@ -26,8 +26,14 @@ defmodule LCRDT.Benchmark do
   #   run_test(2000, 100, 1000)
   # end
 
-  test "Tja ganz schön langsam" do
+  # test "Tja ganz schön langsam" do
+  #   LCRDT.Environment.set_auto_allocation(10)
+  #   run_test(1, 100, 10)
+  # end
+
+  test "Langsam mit mehr delay" do
     LCRDT.Environment.set_auto_allocation(10)
+    lag_nodes()
     run_test(1, 100, 10)
   end
 
@@ -66,6 +72,14 @@ defmodule LCRDT.Benchmark do
     else
       viols
     end
+  end
+
+  defp lag_nodes do
+    tpcs = Enum.map(LCRDT.Network.all_nodes, &(LCRDT.Network.node_to_tpc(&1)))
+    Enum.each(tpcs, fn tpc ->
+      name = if tpc == :foo_tpc, do: :coordinator, else: tpc
+      LCRDT.Injections.inject(name, LCRDT.Injections.neutral(), LCRDT.Injections.Lag.finalize())
+    end)
   end
 
   defp get_nodes do

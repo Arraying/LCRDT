@@ -16,6 +16,6 @@ defmodule LCRDT.Injections do
     def before_finalize(), do: 1 <<< 5
   end
   defmodule Lag do
-    # TODO: Implement lagpoints.
+    def finalize(), do: 1
   end
 end
